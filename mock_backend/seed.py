@@ -1,7 +1,16 @@
 """
-Seed synthetic test data for Care Art mock backend.
-Safe to re-run: wipes existing data and reloads from scratch.
+seed.py — standalone database seeding utility for the Care Art mock backend.
+
+Run manually to populate a local SQLite database with synthetic fixture data:
+
+    python mock_backend/seed.py
+
+Safe to re-run: wipes existing rows and reloads from scratch.
 No real PHI — all names, IDs, and values are fabricated.
+
+NOT imported by main.py and NOT called on server startup.
+The test suite (conftest.py) does NOT depend on this script; all test fixtures
+create data through API endpoints at runtime.
 """
 
 import sys

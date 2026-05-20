@@ -1,6 +1,6 @@
 # Care Art — Test Cases: Participant
 
-> **Status:** Phase 1 draft. Covers REQ_IDs 1.1–1.10 as defined in test_plan_phase1.md Section 2.1. One test case per requirement. Test function names correspond to test_participant.py.
+> **Status:** Phase 1 draft. Covers TC-1.1–TC-1.12 for the Participant group. One test case per scenario. Test function names correspond to test_participant.py.
 > **Regulatory scope:** HIPAA · 42 CFR Part 2 · CMS (Medicaid/Medicare) · State adult day care licensing
 
 ---
@@ -9,307 +9,347 @@
 
 | Test ID | Test Function | Layer | Regulatory Reference |
 |---|---|---|---|
-| TC-1.1 | test_1_1_unique_medicaid_id_per_tenant | API | CMS Medicaid Billing Integrity |
-| TC-1.2 | test_1_2_rbac_write_restricted_to_staff_roles | API | HIPAA §164.312(a)(1) |
-| TC-1.3 | test_1_3_42cfr_part2_sud_record_access_gate | API | 42 CFR Part 2 §2.13(b) |
-| TC-1.4 | test_1_4_audit_log_on_phi_read_and_write | Business Rules | HIPAA §164.312(b); SOC 2 CC7.2 |
-| TC-1.5 | test_1_5_program_status_state_machine_transitions | Business Rules | State Adult Day Care Licensing |
-| TC-1.6 | test_1_6_enrollment_date_required_and_discharge_date_auto_set | Business Rules | State Adult Day Care Licensing |
-| TC-1.7 | test_1_7_mandatory_fields_on_participant_creation | API | CMS Medicaid/Medicare |
-| TC-1.8 | test_1_8_soft_delete_no_hard_delete | API | HIPAA §164.530(j) — Record Retention |
-| TC-1.9 | test_1_9_is_deleted_excluded_from_standard_queries | API | HIPAA §164.530(j) — Record Retention |
-| TC-1.10 | test_1_10_optimistic_locking_version_conflict_returns_409 | Business Rules | HIPAA §164.312(b) — Data Integrity |
+| TC-1.1 | test_1_1_positive_participant_creation_by_program_administrator | API | CMS Medicaid/Medicare; State Adult Day Care Licensing |
+| TC-1.2 | test_1_2_positive_user_login_valid_credentials | API | HIPAA §164.312(d) |
+| TC-1.3 | test_1_3_negative_user_login_wrong_password_returns_401 | API | HIPAA §164.312(d) |
+| TC-1.4 | test_1_4_duplicate_medicaid_id_returns_409 | API | CMS Medicaid Billing Integrity |
+| TC-1.5 | test_1_5_sud_record_billing_specialist_returns_403_no_disclosure | API | 42 CFR Part 2 §2.13(b) |
+| TC-1.6 | test_1_6_audit_log_phi_operation_mandatory_fields_no_phi_values | Business Rules | HIPAA §164.312(b); SOC 2 CC7.2 |
+| TC-1.7 | test_1_7_state_machine_active_to_on_leave_returns_200 | Business Rules | State Adult Day Care Licensing |
+| TC-1.8 | test_1_8_state_machine_deceased_to_active_returns_422 | Business Rules | State Adult Day Care Licensing |
+| TC-1.9 | test_1_9_soft_delete_returns_200_is_deleted_true | API | HIPAA §164.530(j) — Record Retention |
+| TC-1.10 | test_1_10_hard_delete_attempt_returns_405_record_persists | API | HIPAA §164.530(j) — Record Retention |
+| TC-1.11 | test_1_11_missing_first_name_returns_400_with_field_name | API | CMS Medicaid/Medicare |
+| TC-1.12 | test_1_12_missing_enrollment_date_returns_400_with_field_name | API | State Adult Day Care Licensing |
 
 ---
 
 ## Test Cases
 
-### TC-1.1 — Unique Medicaid ID Per Tenant
+### TC-1.1 — Positive Participant Creation by Program_administrator
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.1 |
-| **Test Function** | test_1_1_unique_medicaid_id_per_tenant |
+| **Test Function** | test_1_1_positive_participant_creation_by_program_administrator |
 | **Layer** | API |
-| **Regulatory Reference** | CMS Medicaid Billing Integrity |
+| **REQ_ID** | 1.7 |
+| **Regulatory Reference** | CMS Medicaid/Medicare; State Adult Day Care Licensing |
 
 **Preconditions**
 
-- A `program_administrator` user is active, MFA-enabled, and scoped to `tenant-aaa-001`.
-- The test database is empty; no Participant with `medicaid_id="MCD-001"` exists in `tenant-aaa-001`.
+No participant with these details exists in the system. Program_administrator role is authenticated.
 
 **Test Steps**
 
-1. Send `POST /participants` with `tenant_id="tenant-aaa-001"`, `medicaid_id="MCD-001"`, and all required fields using `program_administrator` headers.
-2. Assert the response status is `201 Created` and record the returned `participant_id`.
-3. Send a second `POST /participants` with the same `tenant_id="tenant-aaa-001"` and `medicaid_id="MCD-001"` for a different participant (different `first_name`, `last_name`).
-4. Assert the response status and inspect the error body.
+1. Prepare a POST /participants payload with tenant_id, first_name, last_name, date_of_birth, and enrollment_date.
+2. Send POST /participants using program_administrator headers.
+3. Assert response status is 201 Created.
+4. Assert response body contains participant_id, first_name, last_name, date_of_birth, and enrollment_date.
+5. Assert program_status defaults to "active" in the response.
 
 **Expected Result**
 
-The second POST returns HTTP `409 Conflict`. The response body contains `detail.error_code = "PARTICIPANT_DUPLICATE_MEDICAID_ID"`. The first participant remains in the database unchanged.
+HTTP 201 Created. Response body contains the assigned participant_id and all submitted fields. program_status is set to "active" automatically.
 
 ---
 
-### TC-1.2 — RBAC Write Restricted to Staff Roles
+### TC-1.2 — Positive User Login with Valid Credentials
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.2 |
-| **Test Function** | test_1_2_rbac_write_restricted_to_staff_roles |
+| **Test Function** | test_1_2_positive_user_login_valid_credentials |
 | **Layer** | API |
-| **Regulatory Reference** | HIPAA §164.312(a)(1) |
+| **REQ_ID** | 2.5 |
+| **Regulatory Reference** | HIPAA §164.312(d) |
 
 **Preconditions**
 
-- Active, MFA-enabled users exist for the `physician`, `participant_family`, and `program_administrator` roles, all scoped to `tenant-aaa-001`.
-- The test database is empty.
+A user account exists with a known email and password. The account is active and MFA is enabled.
 
 **Test Steps**
 
-1. Send `POST /participants` with valid participant fields using `physician` role headers.
-2. Assert the response status is `403 Forbidden`.
-3. Send `POST /participants` with the same payload using `participant_family` role headers.
-4. Assert the response status is `403 Forbidden`.
-5. Send `POST /participants` with the same payload using `program_administrator` role headers.
-6. Assert the response status is `201 Created`.
+1. Prepare a POST /login payload with the valid email and correct password.
+2. Send POST /login.
+3. Assert response status is 200 OK.
+4. Assert response body contains a session token or access token.
 
 **Expected Result**
 
-Both `physician` and `participant_family` receive HTTP `403 Forbidden`. The `program_administrator` request succeeds with HTTP `201 Created`. All access denials are recorded in the audit log.
+HTTP 200 OK. Login succeeds and the response includes valid session credentials. No error is returned.
 
 ---
 
-### TC-1.3 — 42 CFR Part 2 SUD Record Access Gate
+### TC-1.3 — Negative User Login with Wrong Password Returns 401
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.3 |
-| **Test Function** | test_1_3_42cfr_part2_sud_record_access_gate |
+| **Test Function** | test_1_3_negative_user_login_wrong_password_returns_401 |
 | **Layer** | API |
-| **Regulatory Reference** | 42 CFR Part 2 §2.13(b) |
+| **REQ_ID** | 2.5 |
+| **Regulatory Reference** | HIPAA §164.312(d) |
 
 **Preconditions**
 
-- A `program_administrator` user is active and MFA-enabled.
-- A `billing_specialist` user is active and MFA-enabled.
-- Both users are scoped to `tenant-aaa-001`.
-- No SUD-flagged Participant exists yet.
+A user account exists with a known email. An incorrect password is used for the attempt.
 
 **Test Steps**
 
-1. Send `POST /participants` with `is_sud_record=true` using `program_administrator` headers. Record the returned `participant_id`.
-2. Send `GET /participants/{participant_id}` using `billing_specialist` headers.
-3. Assert the response status and inspect the error body for SUD indicator.
-4. Send `GET /participants/{participant_id}` using `program_administrator` headers.
-5. Assert the response status and verify full participant data is returned.
+1. Prepare a POST /login payload with the valid email and an incorrect password.
+2. Send POST /login.
+3. Assert response status is 401 Unauthorized.
+4. Assert no session token is present in the response body.
+5. Assert the error message does not reveal whether the email or the password was wrong.
 
 **Expected Result**
 
-The `billing_specialist` request returns HTTP `403 Forbidden` with `detail.error_code` containing `"SUD"`. No participant data (including `participant_id`, clinical fields, or the `is_sud_record` flag value) appears in the `403` response body. The `program_administrator` request returns HTTP `200 OK` with the full participant record.
+HTTP 401 Unauthorized. No session token is returned. The error message is generic and does not disclose which field (email or password) was incorrect.
 
 ---
 
-### TC-1.4 — Audit Log on PHI Read and Write
+### TC-1.4 — Duplicate Medicaid ID Returns 409
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.4 |
-| **Test Function** | test_1_4_audit_log_on_phi_read_and_write |
-| **Layer** | Business Rules |
-| **Regulatory Reference** | HIPAA §164.312(b); SOC 2 CC7.2 |
+| **Test Function** | test_1_4_duplicate_medicaid_id_returns_409 |
+| **Layer** | API |
+| **REQ_ID** | 1.1 |
+| **Regulatory Reference** | CMS Medicaid Billing Integrity |
 
 **Preconditions**
 
-- A `program_administrator` user is active and MFA-enabled in `tenant-aaa-001`.
-- A `compliance_officer` user is active and MFA-enabled in `tenant-aaa-001`.
-- The test database is empty.
+A participant with medicaid_id="MCD-001" already exists in tenant-aaa-001. Program_administrator role is authenticated.
 
 **Test Steps**
 
-1. Send `POST /participants` with standard participant fields using `program_administrator` headers. Record the returned `participant_id`.
-2. Send `GET /audit-logs` with query params `tenant_id="tenant-aaa-001"`, `resource_type="Participant"`, `resource_id={participant_id}` using `compliance_officer` headers.
-3. Assert the response status is `200 OK`.
-4. Locate the event with `action_type="PHI_WRITE"` in the returned list.
-5. Assert that the following 11 fields are all non-null: `timestamp`, `user_id`, `tenant_id`, `session_id`, `action_type`, `resource_type`, `resource_id`, `data_affected`, `source_ip`, `outcome`, `layer`.
-6. Assert `outcome="SUCCESS"` and `resource_type="Participant"`.
-7. Assert that PHI values — `"Jane"`, `"Doe"`, `"1980-01-15"` — do not appear anywhere in the `data_affected` payload.
+1. Send POST /participants with medicaid_id="MCD-001" and a different first_name and last_name in the same tenant-aaa-001.
+2. Assert response status is 409 Conflict.
+3. Assert detail.error_code = "PARTICIPANT_DUPLICATE_MEDICAID_ID".
 
 **Expected Result**
 
-At least one `PHI_WRITE` audit event is present for the created Participant. All 11 mandatory audit fields are non-null. No PHI values appear in `data_affected`. Audit records carry a retention period of at least 6 years.
+HTTP 409 Conflict. The response body contains error_code="PARTICIPANT_DUPLICATE_MEDICAID_ID". No duplicate record is created in the database.
 
 ---
 
-### TC-1.5 — Program Status State Machine Transitions
+### TC-1.5 — SUD Record Protected from billing_specialist Returns 403 Without Disclosure
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.5 |
-| **Test Function** | test_1_5_program_status_state_machine_transitions |
-| **Layer** | Business Rules |
-| **Regulatory Reference** | State Adult Day Care Licensing |
+| **Test Function** | test_1_5_sud_record_billing_specialist_returns_403_no_disclosure |
+| **Layer** | API |
+| **REQ_ID** | 1.3 |
+| **Regulatory Reference** | 42 CFR Part 2 §2.13(b) |
 
 **Preconditions**
 
-- A `program_administrator` user is active and MFA-enabled in `tenant-aaa-001`.
-- The test database is empty.
-- Valid transitions: `active → on_leave`, `active → discharged`, `active → deceased`, `on_leave → active`, `on_leave → discharged`. Terminal states: `discharged`, `deceased`.
+A participant with is_sud_record=true has been created in tenant-aaa-001 by program_administrator. billing_specialist role is authenticated in the same tenant.
 
 **Test Steps**
 
-1. Send `POST /participants` → record `participant_id` and `version`.
-2. Send `PATCH /participants/{participant_id}` with `program_status="discharged"` and correct `version`. Assert `200 OK` and `program_status="discharged"` in the response. Record new `version`.
-3. Send `PATCH /participants/{participant_id}` with `program_status="on_leave"` (disallowed from `discharged`) and the current `version`. Assert `422 Unprocessable Entity` and that `error_code` contains `"TRANSITION"`.
-4. Create a second participant via `POST /participants` with distinct `medicaid_id`. Record `participant_id` and `version`.
-5. Send `PATCH /participants/{participant_id}` with `program_status="on_leave"` and correct `version`. Assert `200 OK` and `program_status="on_leave"`.
+1. Send GET /participants/{participant_id} using billing_specialist headers.
+2. Assert response status is 403 Forbidden.
+3. Assert detail.error_code contains "SUD".
+4. Assert the response body contains no participant data — no participant_id, no PHI fields, no is_sud_record flag value.
 
 **Expected Result**
 
-The disallowed transition (`discharged → on_leave`) returns HTTP `422` with an error code containing `"TRANSITION"`. Valid transitions (`active → discharged`, `active → on_leave`) return HTTP `200` with the updated `program_status` reflected in the response body.
+HTTP 403 Forbidden with error_code containing "SUD". The existence of the record is not revealed. No participant data of any kind appears in the error response body.
 
 ---
 
-### TC-1.6 — Enrollment Date Required; Discharge Date Auto-Set
+### TC-1.6 — Audit Log on PHI Operation Contains All Mandatory Fields and No PHI Values
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.6 |
-| **Test Function** | test_1_6_enrollment_date_required_and_discharge_date_auto_set |
+| **Test Function** | test_1_6_audit_log_phi_operation_mandatory_fields_no_phi_values |
 | **Layer** | Business Rules |
-| **Regulatory Reference** | State Adult Day Care Licensing |
+| **REQ_ID** | 1.4 |
+| **Regulatory Reference** | HIPAA §164.312(b); SOC 2 CC7.2 |
 
 **Preconditions**
 
-- A `program_administrator` user is active and MFA-enabled in `tenant-aaa-001`.
-- The test database is empty.
+A program_administrator and a compliance_officer are both authenticated in tenant-aaa-001.
 
 **Test Steps**
 
-1. Send `POST /participants` with `first_name`, `last_name`, `date_of_birth`, and `tenant_id` but **without** `enrollment_date`.
-2. Assert the response status is `400 Bad Request` and that `"enrollment_date"` or `"ENROLLMENT"` appears in the response body.
-3. Send `POST /participants` with all required fields including `enrollment_date="2026-01-01"`. Record `participant_id` and `version`.
-4. Send `PATCH /participants/{participant_id}` with `program_status="discharged"` and correct `version`, without supplying a `discharge_date`.
-5. Assert the response status is `200 OK`.
-6. Assert that `discharge_date` in the response body is non-null.
+1. Send POST /participants using program_administrator headers. Record the returned participant_id.
+2. Send GET /audit-logs with tenant_id="tenant-aaa-001", resource_type="Participant", resource_id={participant_id} using compliance_officer headers.
+3. Assert response status is 200 OK.
+4. Locate the event with action_type="PHI_WRITE" in the returned list.
+5. Assert all 11 mandatory fields are non-null: timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+6. Assert PHI values — first_name, last_name, date_of_birth — are absent from data_affected.
 
 **Expected Result**
 
-POST without `enrollment_date` returns HTTP `400` identifying the missing field. PATCH to `discharged` without a caller-supplied `discharge_date` returns HTTP `200` with `discharge_date` automatically set to the current UTC date.
+Audit log contains a PHI_WRITE event with outcome="SUCCESS". All 11 mandatory fields from Section 2.6.1 are populated. PHI values do not appear in data_affected.
 
 ---
 
-### TC-1.7 — Mandatory Fields on Participant Creation
+### TC-1.7 — State Machine Positive: active → on_leave Returns 200
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.7 |
-| **Test Function** | test_1_7_mandatory_fields_on_participant_creation |
-| **Layer** | API |
-| **Regulatory Reference** | CMS Medicaid/Medicare |
+| **Test Function** | test_1_7_state_machine_active_to_on_leave_returns_200 |
+| **Layer** | Business Rules |
+| **REQ_ID** | 1.5 |
+| **Regulatory Reference** | State Adult Day Care Licensing |
 
 **Preconditions**
 
-- A `program_administrator` user is active and MFA-enabled in `tenant-aaa-001`.
-- The test database is empty.
+A participant with program_status="active" exists in tenant-aaa-001. Program_administrator role is authenticated.
 
 **Test Steps**
 
-1. Send `POST /participants` with all required fields **except** `first_name`. Assert `422 Unprocessable Entity`.
-2. Send `POST /participants` with all required fields **except** `date_of_birth`. Assert `422 Unprocessable Entity`.
-3. Send `POST /participants` with all required fields **except** `tenant_id`. Assert `422 Unprocessable Entity`.
+1. Record the participant_id and current version.
+2. Send PATCH /participants/{participant_id} with program_status="on_leave" and the correct version value.
+3. Assert response status is 200 OK.
+4. Assert program_status="on_leave" in the response body.
 
 **Expected Result**
 
-Each POST missing a required field returns HTTP `422 Unprocessable Entity`. The response body identifies the absent field. A valid POST with all mandatory fields (`first_name`, `last_name`, `date_of_birth`, `enrollment_date`, `tenant_id`) returns `201 Created`.
+HTTP 200 OK. The program_status transitions to "on_leave" successfully. The updated status is reflected in the response body.
 
 ---
 
-### TC-1.8 — Soft Delete, No Hard Delete
+### TC-1.8 — State Machine Negative: deceased → active Returns 422
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.8 |
-| **Test Function** | test_1_8_soft_delete_no_hard_delete |
-| **Layer** | API |
-| **Regulatory Reference** | HIPAA §164.530(j) — Record Retention |
+| **Test Function** | test_1_8_state_machine_deceased_to_active_returns_422 |
+| **Layer** | Business Rules |
+| **REQ_ID** | 1.5 |
+| **Regulatory Reference** | State Adult Day Care Licensing |
 
 **Preconditions**
 
-- A `program_administrator` user is active and MFA-enabled in `tenant-aaa-001`.
-- A Participant has been created and `participant_id` is known.
+A participant exists and has been transitioned to program_status="deceased". Program_administrator role is authenticated.
 
 **Test Steps**
 
-1. Send `POST /participants` → record `participant_id`.
-2. Send `DELETE /participants/{participant_id}` using `program_administrator` headers.
-3. Assert the response status is `200 OK`.
-4. Assert that `is_deleted=true` appears in the response body.
-5. Send `DELETE /participants/{participant_id}/hard` using `program_administrator` headers.
-6. Assert the response status.
+1. Record the participant_id and current version after the deceased transition.
+2. Send PATCH /participants/{participant_id} with program_status="active" and the current version.
+3. Assert response status is 422 Unprocessable Entity.
+4. Assert error_code contains "TRANSITION".
 
 **Expected Result**
 
-Soft delete (`DELETE /participants/{participant_id}`) returns HTTP `200` with `is_deleted=true`. Hard delete (`DELETE /participants/{participant_id}/hard`) returns HTTP `405 Method Not Allowed`. The physical database row is not removed; the record and its audit log references remain intact for the full HIPAA retention period.
+HTTP 422 Unprocessable Entity. The transition from deceased to active is blocked. The error code indicates an invalid state transition. The participant record remains unchanged.
 
 ---
 
-### TC-1.9 — is_deleted Excluded from Standard Queries
+### TC-1.9 — Soft Delete Positive: Returns 200 and is_deleted True in DB
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.9 |
-| **Test Function** | test_1_9_is_deleted_excluded_from_standard_queries |
+| **Test Function** | test_1_9_soft_delete_returns_200_is_deleted_true |
 | **Layer** | API |
+| **REQ_ID** | 1.8 |
 | **Regulatory Reference** | HIPAA §164.530(j) — Record Retention |
 
 **Preconditions**
 
-- A `program_administrator` user is active and MFA-enabled in `tenant-aaa-001`.
-- A `compliance_officer` user is active and MFA-enabled in `tenant-aaa-001`.
-- A Participant has been created and then soft-deleted; its `participant_id` is known.
+A participant exists in tenant-aaa-001 and has not been deleted. Program_administrator role is authenticated.
 
 **Test Steps**
 
-1. Send `POST /participants` → record `participant_id`.
-2. Send `DELETE /participants/{participant_id}` → soft-delete the record.
-3. Send `GET /participants?tenant_id=tenant-aaa-001` using `program_administrator` headers.
-4. Assert the response status is `200 OK`.
-5. Assert that `participant_id` from step 1 is **not** present in the returned list.
-6. Send `GET /participants?tenant_id=tenant-aaa-001&include_deleted=true` using `compliance_officer` headers.
-7. Assert the response status is `200 OK`.
-8. Assert that `participant_id` from step 1 **is** present in the returned list with `is_deleted=true`.
+1. Record the participant_id.
+2. Send DELETE /participants/{participant_id} using program_administrator headers.
+3. Assert response status is 200 OK.
+4. Assert is_deleted=true in the response body.
+5. Send GET /participants/{participant_id} using a standard role (e.g., care_coordinator).
+6. Assert response status is 404 Not Found.
 
 **Expected Result**
 
-The standard list endpoint (`GET /participants`) excludes records where `is_deleted=true`. The compliance audit query (`include_deleted=true`) returns the soft-deleted record with `is_deleted=true`. Each compliance query generates an audit event.
+HTTP 200 OK with is_deleted=true in the response. A subsequent standard GET on the same participant_id returns 404. The database row is not physically removed.
 
 ---
 
-### TC-1.10 — Optimistic Locking — Version Conflict Returns 409
+### TC-1.10 — Soft Delete Negative: Physical Delete Attempt Returns 405 Record Remains in DB
 
 | Field | Value |
 |---|---|
 | **Test ID** | TC-1.10 |
-| **Test Function** | test_1_10_optimistic_locking_version_conflict_returns_409 |
-| **Layer** | Business Rules |
-| **Regulatory Reference** | HIPAA §164.312(b) — Data Integrity |
+| **Test Function** | test_1_10_hard_delete_attempt_returns_405_record_persists |
+| **Layer** | API |
+| **REQ_ID** | 1.9 |
+| **Regulatory Reference** | HIPAA §164.530(j) — Record Retention |
 
 **Preconditions**
 
-- A `program_administrator` user is active and MFA-enabled in `tenant-aaa-001`.
-- A Participant has been created with a known `version` (initial version is `1`).
+A participant exists in tenant-aaa-001. Program_administrator role is authenticated.
 
 **Test Steps**
 
-1. Send `POST /participants` → record `participant_id` and `version` (e.g., `version=1`).
-2. Send `PATCH /participants/{participant_id}` with `version=version-1` (stale value) and `program_status="on_leave"`.
-3. Assert the response status is `409 Conflict`.
-4. Assert `detail.error_code = "PARTICIPANT_VERSION_CONFLICT"`.
-5. Send `PATCH /participants/{participant_id}` with `version=version` (correct current value) and `program_status="on_leave"`.
-6. Assert the response status is `200 OK`.
-7. Assert that `version` in the response body equals `version+1`.
+1. Record the participant_id.
+2. Send DELETE /participants/{participant_id}/hard using program_administrator headers.
+3. Assert response status is 405 Method Not Allowed.
+4. Send GET /participants/{participant_id} using compliance_officer headers with include_deleted=true.
+5. Assert the participant record is still present in the response.
 
 **Expected Result**
 
-PATCH with a stale `version` returns HTTP `409 Conflict` with `error_code = "PARTICIPANT_VERSION_CONFLICT"`. PATCH with the correct current `version` returns HTTP `200 OK` with `version` incremented by 1 in the response body. Two concurrent PATCHes using the same initial version result in one `200` and one `409`.
+HTTP 405 Method Not Allowed. The physical database row is not removed. The record remains retrievable by compliance_officer with include_deleted=true.
+
+---
+
+### TC-1.11 — Required Field Missing first_name Returns 400 with Field Name in Error
+
+| Field | Value |
+|---|---|
+| **Test ID** | TC-1.11 |
+| **Test Function** | test_1_11_missing_first_name_returns_400_with_field_name |
+| **Layer** | API |
+| **REQ_ID** | 1.7 |
+| **Regulatory Reference** | CMS Medicaid/Medicare |
+
+**Preconditions**
+
+Program_administrator role is authenticated. No participant with these details needs to exist beforehand.
+
+**Test Steps**
+
+1. Prepare a POST /participants payload with tenant_id, last_name, date_of_birth, and enrollment_date — omitting first_name.
+2. Send POST /participants using program_administrator headers.
+3. Assert response status is 400 or 422.
+4. Assert the response body contains "first_name" identifying the missing field.
+
+**Expected Result**
+
+HTTP 400 or 422. The error response explicitly names "first_name" as the missing or invalid field. No participant record is created.
+
+---
+
+### TC-1.12 — Required Field Missing enrollment_date Returns 400 with Field Name in Error
+
+| Field | Value |
+|---|---|
+| **Test ID** | TC-1.12 |
+| **Test Function** | test_1_12_missing_enrollment_date_returns_400_with_field_name |
+| **Layer** | API |
+| **REQ_ID** | 1.6 |
+| **Regulatory Reference** | State Adult Day Care Licensing |
+
+**Preconditions**
+
+Program_administrator role is authenticated. No participant with these details needs to exist beforehand.
+
+**Test Steps**
+
+1. Prepare a POST /participants payload with tenant_id, first_name, last_name, and date_of_birth — omitting enrollment_date.
+2. Send POST /participants using program_administrator headers.
+3. Assert response status is 400.
+4. Assert the response body contains "enrollment_date" identifying the missing field.
+
+**Expected Result**
+
+HTTP 400. The error response explicitly names "enrollment_date" as the missing field. No participant record is created.

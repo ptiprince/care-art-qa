@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 import uuid
 
@@ -118,7 +118,7 @@ def _emit_audit(
 ):
     row = AuditLog(
         audit_id=str(uuid.uuid4()),
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         user_id=user_id,
         tenant_id=tenant_id,
         session_id=session_id,
@@ -255,7 +255,7 @@ def create_participant(body: ParticipantCreate, request: Request, db: Session = 
                 "A participant with this Medicaid ID is already registered in this program.",
             )
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     row = Participant(
         participant_id=str(uuid.uuid4()),
         created_at=now,
@@ -356,7 +356,7 @@ def patch_participant(participant_id: str, body: ParticipantPatch, request: Requ
         row.updated_by = body.updated_by
 
     row.version = row.version + 1
-    row.updated_at = datetime.utcnow()
+    row.updated_at = datetime.now(timezone.utc)
 
     _emit_audit(
         db, caller["user_id"], row.tenant_id, caller["session_id"],
@@ -381,7 +381,7 @@ def soft_delete_participant(participant_id: str, request: Request, db: Session =
         return {"participant_id": participant_id, "is_deleted": True}
 
     row.is_deleted = True
-    row.updated_at = datetime.utcnow()
+    row.updated_at = datetime.now(timezone.utc)
     row.version = row.version + 1
     _emit_audit(
         db, caller["user_id"], row.tenant_id, caller["session_id"],
@@ -415,7 +415,7 @@ def create_user(body: UserCreate, request: Request, db: Session = Depends(get_db
             "An account with this email address already exists in this program.",
         )
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     row = User(
         user_id=str(uuid.uuid4()),
         created_at=now,
@@ -482,7 +482,7 @@ def patch_user(user_id: str, body: UserPatch, request: Request, db: Session = De
     if body.status is not None:
         _validate_user_transition(row.status, body.status.value)
         if body.status.value == "inactive" and row.deactivated_at is None:
-            row.deactivated_at = datetime.utcnow()
+            row.deactivated_at = datetime.now(timezone.utc)
         row.status = body.status.value
         changed_fields.append("status")
 
@@ -496,7 +496,7 @@ def patch_user(user_id: str, body: UserPatch, request: Request, db: Session = De
         row.updated_by = body.updated_by
 
     row.version = row.version + 1
-    row.updated_at = datetime.utcnow()
+    row.updated_at = datetime.now(timezone.utc)
 
     _emit_audit(
         db, caller["user_id"], row.tenant_id, caller["session_id"],
@@ -522,7 +522,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=401, detail={"error_code": "AUTH_FAILURE", "message": "Invalid credentials."})
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Check lockout
     if row.locked_until and row.locked_until > now:
@@ -577,7 +577,7 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
 @app.post("/jobs/deactivate-dormant", tags=["jobs"])
 def deactivate_dormant_accounts(db: Session = Depends(get_db)):
-    cutoff = datetime.utcnow() - timedelta(days=90)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
     dormant = db.query(User).filter(
         User.status == "active",
         User.last_login_at < cutoff,
@@ -585,7 +585,7 @@ def deactivate_dormant_accounts(db: Session = Depends(get_db)):
     deactivated = []
     for user in dormant:
         user.status = "inactive"
-        user.deactivated_at = datetime.utcnow()
+        user.deactivated_at = datetime.now(timezone.utc)
         _emit_audit(
             db, "system", user.tenant_id, "sess_job",
             "PHI_WRITE", "User", user.user_id,
@@ -625,7 +625,7 @@ def create_attendance(body: AttendanceCreate, request: Request, db: Session = De
         else:
             att_data["authorized_units_consumed"] = round(body.total_hours * 4, 2)
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     row = Attendance(
         attendance_id=str(uuid.uuid4()),
         created_at=now,
@@ -728,7 +728,7 @@ def patch_attendance(attendance_id: str, body: AttendancePatch, request: Request
         row.updated_by = body.updated_by
 
     row.version = row.version + 1
-    row.updated_at = datetime.utcnow()
+    row.updated_at = datetime.now(timezone.utc)
 
     _emit_audit(
         db, caller["user_id"], row.tenant_id, caller["session_id"],
@@ -787,7 +787,7 @@ def create_claim(body: ClaimCreate, request: Request, db: Session = Depends(get_
     else:
         _409("CLAIM_DUPLICATE_REFERENCE", "Could not generate a unique claim reference number.")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     data = body.model_dump()
     row = Claim(
         claim_id=str(uuid.uuid4()),
@@ -878,7 +878,7 @@ def patch_claim(claim_id: str, body: ClaimPatch, request: Request, db: Session =
         # draft → submitted is the only forward transition
         if row.claim_status == "draft" and body.claim_status.value == "submitted":
             row.claim_status = "submitted"
-            row.submission_date = datetime.utcnow()
+            row.submission_date = datetime.now(timezone.utc)
             changed_fields.extend(["claim_status", "submission_date"])
             _emit_audit(
                 db, caller["user_id"], row.tenant_id, caller["session_id"],
@@ -901,7 +901,7 @@ def patch_claim(claim_id: str, body: ClaimPatch, request: Request, db: Session =
         row.updated_by = body.updated_by
 
     row.version = row.version + 1
-    row.updated_at = datetime.utcnow()
+    row.updated_at = datetime.now(timezone.utc)
 
     _emit_audit(
         db, caller["user_id"], row.tenant_id, caller["session_id"],
@@ -961,14 +961,14 @@ def create_mar_record(body: MARRecordCreate, request: Request, db: Session = Dep
 
     # Administered time bounds
     if body.administered_time is not None:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if body.administered_time > now:
             _422("ADMIN_TIME_FUTURE", "administered_time cannot be in the future.")
         early_cutoff = body.scheduled_time - timedelta(hours=2)
         if body.administered_time < early_cutoff:
             _422("ADMIN_TIME_TOO_EARLY", "administered_time is more than 2 hours before scheduled_time.")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     row = MARRecord(
         mar_id=str(uuid.uuid4()),
         created_at=now,
@@ -1077,7 +1077,7 @@ def patch_mar_record(mar_id: str, body: MARRecordPatch, request: Request, db: Se
         row.updated_by = body.updated_by
 
     row.version = row.version + 1
-    row.updated_at = datetime.utcnow()
+    row.updated_at = datetime.now(timezone.utc)
 
     _emit_audit(
         db, caller["user_id"], row.tenant_id, caller["session_id"],
@@ -1101,7 +1101,7 @@ def create_incident(body: IncidentCreate, request: Request, db: Session = Depend
     auto_escalate = body.severity == "severe" or body.incident_type == "medical_emergency"
     effective_status = "escalated" if auto_escalate else body.status.value
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     data = body.model_dump()
     data["status"] = effective_status
 
@@ -1238,7 +1238,7 @@ def patch_incident(incident_id: str, body: IncidentPatch, request: Request, db: 
         row.updated_by = body.updated_by
 
     row.version = row.version + 1
-    row.updated_at = datetime.utcnow()
+    row.updated_at = datetime.now(timezone.utc)
 
     _emit_audit(
         db, caller["user_id"], row.tenant_id, caller["session_id"],
@@ -1283,7 +1283,7 @@ def list_audit_logs(
 
 @app.get("/jobs/escalated-incidents-alert", tags=["jobs"])
 def alert_escalated_incidents_approaching_deadline(db: Session = Depends(get_db)):
-    cutoff = datetime.utcnow() - timedelta(hours=20)
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=20)
     incidents = db.query(Incident).filter(
         Incident.status == "escalated",
         Incident.regulatory_submission_date.is_(None),
