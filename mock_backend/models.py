@@ -23,6 +23,8 @@ from database import Base
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
 
+
+
 class GenderEnum(str, PyEnum):
     male = "male"
     female = "female"
@@ -110,6 +112,8 @@ class IncidentStatusEnum(str, PyEnum):
 
 
 # ─── SQLAlchemy ORM Models ─────────────────────────────────────────────────────
+
+
 
 class Participant(Base):
     __tablename__ = "participant"
@@ -316,6 +320,24 @@ class Incident(Base):
     created_by = Column(String(36))
     updated_by = Column(String(36))
     version = Column(Integer, default=1, nullable=False)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    audit_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow)
+    user_id = Column(String(36), nullable=False)
+    tenant_id = Column(String(36), nullable=False)
+    session_id = Column(String(100), nullable=False)
+    action_type = Column(String(30), nullable=False)
+    resource_type = Column(String(50), nullable=False)
+    resource_id = Column(String(36), nullable=False)
+    data_affected = Column(JSON, nullable=False)
+    source_ip = Column(String(45), nullable=False)
+    outcome = Column(String(20), nullable=False)
+    layer = Column(String(30), nullable=False)
+    retention_years = Column(Integer, nullable=False, default=6)
 
 
 # ─── Pydantic Schemas ──────────────────────────────────────────────────────────
@@ -615,3 +637,95 @@ class IncidentResponse(_ORM):
     created_by: Optional[str] = None
     updated_by: Optional[str] = None
     version: int
+
+
+# ─── PATCH request bodies ─────────────────────────────────────────────────────
+
+class ParticipantPatch(BaseModel):
+    version: int
+    program_status: Optional[ProgramStatusEnum] = None
+    enrollment_date: Optional[date] = None
+    discharge_date: Optional[date] = None
+    discharge_reason: Optional[str] = None
+    authorized_units_per_week: Optional[int] = None
+    functional_level: Optional[FunctionalLevelEnum] = None
+    mobility_status: Optional[MobilityStatusEnum] = None
+    attending_physician_id: Optional[str] = None
+    is_deleted: Optional[bool] = None
+    updated_by: Optional[str] = None
+
+
+class UserPatch(BaseModel):
+    version: int
+    status: Optional[UserStatusEnum] = None
+    role: Optional[UserRoleEnum] = None
+    mfa_enabled: Optional[bool] = None
+    phone: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class AttendancePatch(BaseModel):
+    version: int
+    status: Optional[AttendanceStatusEnum] = None
+    sign_in_time: Optional[time] = None
+    sign_out_time: Optional[time] = None
+    total_hours: Optional[float] = None
+    authorized_units_consumed: Optional[float] = None
+    void_reason: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class ClaimPatch(BaseModel):
+    version: int
+    claim_status: Optional[ClaimStatusEnum] = None
+    submission_date: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class MARRecordPatch(BaseModel):
+    version: int
+    status: Optional[MARStatusEnum] = None
+    administered_time: Optional[datetime] = None
+    notes: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class IncidentPatch(BaseModel):
+    version: int
+    status: Optional[IncidentStatusEnum] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+    severity: Optional[SeverityEnum] = None
+    regulatory_submission_date: Optional[date] = None
+    updated_by: Optional[str] = None
+
+
+# ─── AuditLog ─────────────────────────────────────────────────────────────────
+
+class AuditLogResponse(_ORM):
+    audit_id: str
+    timestamp: datetime
+    user_id: str
+    tenant_id: str
+    session_id: str
+    action_type: str
+    resource_type: str
+    resource_id: str
+    data_affected: List[str]
+    source_ip: str
+    outcome: str
+    layer: str
+    retention_years: int
+
+
+# ─── Login ─────────────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    user_id: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    status: str
+    message: str
