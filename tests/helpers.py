@@ -1,5 +1,7 @@
 """Utility helpers for Care Art Phase 1 tests."""
 
+import uuid
+
 TENANT_A = "tenant-aaa-001"
 TENANT_B = "tenant-bbb-002"
 
@@ -51,14 +53,9 @@ def make_user(client, headers, tenant_id=TENANT_A, email=None, role="care_coordi
         "tenant_id": tenant_id,
         "first_name": "Test",
         "last_name": "User",
-        "email": email or f"user-{id(payload := {})}-{id(headers)}@example.com",
+        "email": email or f"user-{uuid.uuid4().hex[:8]}@example.com",
         "role": role,
     }
-    if email:
-        payload["email"] = email
-    else:
-        import uuid
-        payload["email"] = f"user-{uuid.uuid4().hex[:8]}@example.com"
     payload.update(kwargs)
     r = client.post("/users", json=payload, headers=headers)
     assert r.status_code == 201, f"User creation failed: {r.text}"
@@ -66,7 +63,6 @@ def make_user(client, headers, tenant_id=TENANT_A, email=None, role="care_coordi
 
 
 def make_nurse_user(client, headers, tenant_id=TENANT_A, email=None):
-    import uuid
     return make_user(
         client, headers, tenant_id=tenant_id,
         email=email or f"nurse-{uuid.uuid4().hex[:8]}@example.com",

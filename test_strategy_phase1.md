@@ -17,8 +17,8 @@ The mock backend is the sole target. Tests run against a local SQLite database s
 
 | Entity | Section | Primary Regulatory Obligation | Req Count |
 |---|---|---|---|
-| Participant | 3.1 | HIPAA - 42 CFR Part 2 (via is_sud_record) - CMS | 10 |
-| User | 3.2 | HIPAA Workforce §164.308(a)(3) | 12 |
+| Participant | 3.1 | HIPAA - 42 CFR Part 2 (via is_sud_record) - CMS | 12 |
+| User | 3.2 | HIPAA Workforce §164.308(a)(3) | 13 |
 | Attendance | 3.3 | HIPAA - CMS billing integrity | 8 |
 | Claim | 3.4 | HIPAA - CMS Medicaid/Medicare - EDI X12 | 9 |
 | MARRecord | 3.5 | HIPAA - 42 CFR Part 2 (via is_controlled_substance) | 10 |
@@ -372,36 +372,39 @@ tests/
     test_schema.py
 ```
 
-**test_participant.py** - 10 functions (REQ_IDs 1.1 - 1.10)
+**test_participant.py** - 12 functions (TC-1.1 - TC-1.12)
 
 ```
-def test_1_1_unique_medicaid_id_per_tenant
-def test_1_2_rbac_write_restricted_to_staff_roles
-def test_1_3_42cfr_part2_sud_record_access_gate
-def test_1_4_audit_log_on_phi_read_and_write
-def test_1_5_program_status_state_machine_transitions
-def test_1_6_enrollment_date_required_and_discharge_date_auto_set
-def test_1_7_mandatory_fields_on_participant_creation
-def test_1_8_soft_delete_no_hard_delete
-def test_1_9_is_deleted_excluded_from_standard_queries
-def test_1_10_optimistic_locking_version_conflict_returns_409
+def test_tc_1_1_positive_participant_creation_by_program_administrator
+def test_tc_1_2_positive_login_valid_credentials
+def test_tc_1_3_negative_login_wrong_password_returns_401
+def test_tc_1_4_duplicate_medicaid_id_returns_409
+def test_tc_1_5_sud_record_billing_specialist_returns_403_no_disclosure
+def test_tc_1_6_audit_log_phi_operation_mandatory_fields_no_phi_values
+def test_tc_1_7_state_machine_active_to_on_leave_returns_200
+def test_tc_1_8_state_machine_deceased_to_active_returns_422
+def test_tc_1_9_soft_delete_returns_200_is_deleted_true
+def test_tc_1_10_hard_delete_attempt_returns_405_record_persists
+def test_tc_1_11_missing_first_name_returns_400_with_field_name
+def test_tc_1_12_missing_enrollment_date_returns_400_with_field_name
 ```
 
-**test_user.py** - 12 functions (REQ_IDs 2.1 - 2.12)
+**test_user.py** - 13 functions (TC-2.1 - TC-2.13)
 
 ```
-def test_2_1_unique_email_per_tenant
-def test_2_2_unique_user_id_globally
-def test_2_3_rbac_evaluation_order_tenant_status_role
-def test_2_4_mfa_required_for_phi_accessing_roles
-def test_2_5_account_locked_after_five_failed_logins
-def test_2_6_lockout_state_persists_in_database
-def test_2_7_user_status_state_machine_transitions
-def test_2_8_audit_log_on_auth_events_and_user_changes
-def test_2_9_password_stored_as_hash_never_plaintext
-def test_2_10_90_day_password_rotation_and_reuse_prevention
-def test_2_11_dormant_account_auto_deactivated_after_90_days
-def test_2_12_optimistic_locking_version_conflict_returns_409
+def test_tc_2_1_positive_user_creation_by_program_administrator
+def test_tc_2_2_user_creation_by_unauthorized_role_returns_403
+def test_tc_2_3_positive_login_valid_credentials_returns_200
+def test_tc_2_4_login_wrong_password_returns_401_no_credential_disclosure
+def test_tc_2_5_duplicate_email_same_tenant_returns_409
+def test_tc_2_6_same_email_different_tenant_returns_201
+def test_tc_2_7_account_lockout_after_5_failed_logins
+def test_tc_2_8_locked_user_login_returns_401_account_locked
+def test_tc_2_9_soft_delete_user_returns_200_status_inactive
+def test_tc_2_10_audit_log_on_user_creation_has_mandatory_fields_no_pii
+def test_tc_2_11_missing_email_returns_400_or_422_with_field_name
+def test_tc_2_12_billing_specialist_create_participant_returns_403
+def test_tc_2_13_nurse_create_claim_returns_403
 ```
 
 **test_attendance.py** - 8 functions (REQ_IDs 3.1 - 3.8)

@@ -5,12 +5,21 @@ Full QA infrastructure built from scratch for a HIPAA, 42 CFR Part 2, CMS, ISO 1
 ## Documents
 
 - [Requirements Phase 1](https://docs.google.com/spreadsheets/d/1zMsnvdmbzKZpY19QxgiGqnPbk7Alo9Xa/edit?usp=sharing) — 58 requirements grouped by entity with regulatory references.
-- [Test Strategy Phase 1](https://docs.google.com/document/d/1f2_kuuXYukhl6_umYJ6bKmmWVprW6Q6q/edit?usp=sharing) — risk-based strategy, fixture layer design, CI gate.
-- [Test Cases Phase 1](https://docs.google.com/spreadsheets/d/18La5det9gJWmvp3iMes4tGWEKTDdHjo_/edit?usp=sharing) — 10 test cases for Participant entity, steps mapped to REQ_IDs.
+- [Test Cases Phase 1](https://docs.google.com/spreadsheets/d/1Gz7FyMkqDEW47lkmzN_rxcnDP1QMCbQo/edit?usp=sharing) — test cases for Participant and User entity groups.
+- [Test Strategy Phase 1](https://docs.google.com/document/d/1cffLTEYunaSdMJdLkN16xwPz5mW87flu/edit?usp=sharing) — risk-based strategy, fixture layer design, CI gate.
+- [Test Plan Phase 1](https://docs.google.com/document/d/17dquqNgr0keI6PMf_dw51UScxh6K9yvM/edit?usp=sharing) — 93 atomic test functions mapped to REQ_IDs.
 - [architecture.md](architecture.md)
 - [test_plan_phase1.md](test_plan_phase1.md)
 - [test_cases/](test_cases/)
 - [mock_backend/](mock_backend/)
+
+## Tests
+
+| File | Status | Count |
+|---|---|---|
+| tests/test_participant.py | passing | 12 |
+| tests/test_user.py | passing | 13 |
+| **Total** | | **25** |
 
 ## Stack
 

@@ -44,7 +44,7 @@ STAFF_ROLES = {
 }
 
 WRITE_ROLES = {
-    "participant": STAFF_ROLES,
+    "participant": {"program_administrator", "care_coordinator", "nurse_medication_aide", "compliance_officer"},
     "attendance": {"program_administrator", "care_coordinator"},
     "claim": {"billing_specialist", "program_administrator"},
     "mar_record": {"nurse_medication_aide"},
@@ -531,7 +531,8 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
 
     # Check lockout
-    if row.locked_until and row.locked_until > now:
+    locked_until = row.locked_until.replace(tzinfo=timezone.utc) if row.locked_until and row.locked_until.tzinfo is None else row.locked_until
+    if locked_until and locked_until > now:
         _emit_audit(
             db, row.user_id, row.tenant_id, "sess_login",
             "AUTH_FAILURE", "User", row.user_id,

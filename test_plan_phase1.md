@@ -9,8 +9,8 @@
 
 | Test File | Tests | REQ_IDs Covered | Layer(s) | Gate Group |
 |---|---|---|---|---|
-| test_participant.py | 10 | 1.1 - 1.10 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, State machine, Optimistic locking |
-| test_user.py | 12 | 2.1 - 2.12 | API, DB, Business Rules | Unique constraints, RBAC, State machine, Optimistic locking |
+| test_participant.py | 12 | TC-1.1 - TC-1.12 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, State machine, Soft delete, Mandatory fields |
+| test_user.py | 13 | TC-2.1 - TC-2.13 | API, Business Rules | Unique constraints, RBAC, Auth, Account lockout, State machine, Audit log, Mandatory fields |
 | test_attendance.py | 8 | 3.1 - 3.8 | API, Business Rules | Unique constraints, RBAC, State machine, Optimistic locking |
 | test_claim.py | 9 | 4.1 - 4.9 | API, Business Rules | Unique constraints, RBAC, State machine, Optimistic locking |
 | test_mar_record.py | 10 | 5.1 - 5.10 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, Optimistic locking |
@@ -19,43 +19,46 @@
 | test_rbac_sweep.py | 9 | Cross-cutting | API | RBAC enforcement (security gate) |
 | test_tenant_isolation.py | 7 | Cross-cutting | API, Business Rules | Tenant isolation (security gate) |
 | db/test_schema.py | 8 | Cross-cutting | DB | Schema and constraint assertions (data integrity gate) |
-| **Total** | **90** | **57 entity REQ_IDs** | | |
+| **Total** | **93** | **60 entity TCs** | | |
 
 ---
 
 ## 2. Entity Test Files
 
-### 2.1 test_participant.py - Participant (10 tests)
+### 2.1 test_participant.py - Participant (12 tests)
 
-| Test Function | REQ_ID | Layer | What Is Verified |
+| Test Function | TC | Layer | What Is Verified |
 |---|---|---|---|
-| test_1_1_unique_medicaid_id_per_tenant | 1.1 | API | POST with duplicate medicaid_id in same tenant returns 409 and PARTICIPANT_DUPLICATE_MEDICAID_ID |
-| test_1_2_rbac_write_restricted_to_staff_roles | 1.2 | API | POST or PATCH from physician or participant_family role returns 403; authorized staff roles succeed |
-| test_1_3_42cfr_part2_sud_record_access_gate | 1.3 | API | GET on is_sud_record=true Participant from non-privileged role returns 403 with no record disclosure |
-| test_1_4_audit_log_on_phi_read_and_write | 1.4 | Business Rules | Participant write produces audit event with all Section 2.6.1 fields non-null and no PHI values in payload |
-| test_1_5_program_status_state_machine_transitions | 1.5 | Business Rules | Disallowed program_status transition returns 422; each allowed transition returns 200 with updated status |
-| test_1_6_enrollment_date_required_and_discharge_date_auto_set | 1.6 | Business Rules | POST without enrollment_date returns 400; PATCH to discharged auto-populates discharge_date if not supplied |
-| test_1_7_mandatory_fields_on_participant_creation | 1.7 | API | POST missing any mandatory field returns 400 identifying the absent field by name |
-| test_1_8_soft_delete_no_hard_delete | 1.8 | API | DELETE returns 200 and sets is_deleted=true; physical row removal attempt returns 405 |
-| test_1_9_is_deleted_excluded_from_standard_queries | 1.9 | API | GET /participants list excludes is_deleted=true records; compliance_officer audit endpoint returns them |
-| test_1_10_optimistic_locking_version_conflict_returns_409 | 1.10 | Business Rules | PATCH with stale version returns 409 PARTICIPANT_VERSION_CONFLICT; correct version returns 200 with version n+1 |
+| test_tc_1_1_positive_participant_creation_by_program_administrator | TC-1.1 | API | POST /participants by program_administrator returns 201 with all required fields and program_status active |
+| test_tc_1_2_positive_login_valid_credentials | TC-1.2 | API | POST /login with valid user_id and correct password returns 200 with status ok |
+| test_tc_1_3_negative_login_wrong_password_returns_401 | TC-1.3 | API | POST /login with wrong non-empty password returns 401; error message does not reveal which credential was wrong |
+| test_tc_1_4_duplicate_medicaid_id_returns_409 | TC-1.4 | API | POST with duplicate medicaid_id in same tenant returns 409 PARTICIPANT_DUPLICATE_MEDICAID_ID |
+| test_tc_1_5_sud_record_billing_specialist_returns_403_no_disclosure | TC-1.5 | API | GET on is_sud_record=true by billing_specialist returns 403 SUD_ACCESS_DENIED with no participant data in response |
+| test_tc_1_6_audit_log_phi_operation_mandatory_fields_no_phi_values | TC-1.6 | Business Rules | PHI_WRITE audit event after participant creation has all 11 mandatory fields non-null and no PHI values in data_affected |
+| test_tc_1_7_state_machine_active_to_on_leave_returns_200 | TC-1.7 | Business Rules | PATCH program_status from active to on_leave returns 200 with updated status persisted in DB |
+| test_tc_1_8_state_machine_deceased_to_active_returns_422 | TC-1.8 | Business Rules | PATCH program_status from deceased to active returns 422 with TRANSITION error code; DB status unchanged |
+| test_tc_1_9_soft_delete_returns_200_is_deleted_true | TC-1.9 | API | DELETE returns 200 with is_deleted=true; subsequent GET by care_coordinator returns 404; row persists in DB |
+| test_tc_1_10_hard_delete_attempt_returns_405_record_persists | TC-1.10 | API | DELETE /hard returns 405 HARD_DELETE_NOT_PERMITTED; record remains retrievable and row persists in DB |
+| test_tc_1_11_missing_first_name_returns_400_with_field_name | TC-1.11 | API | POST without first_name returns 400 or 422 identifying first_name in the error; no participant row created |
+| test_tc_1_12_missing_enrollment_date_returns_400_with_field_name | TC-1.12 | API | POST without enrollment_date returns 400 identifying enrollment_date in the error; no participant row created |
 
-### 2.2 test_user.py - User (12 tests)
+### 2.2 test_user.py - User (13 tests)
 
-| Test Function | REQ_ID | Layer | What Is Verified |
+| Test Function | TC | Layer | What Is Verified |
 |---|---|---|---|
-| test_2_1_unique_email_per_tenant | 2.1 | API | POST with email already in same tenant returns 409 USER_DUPLICATE_EMAIL; same email in other tenant returns 201 |
-| test_2_2_unique_user_id_globally | 2.2 | DB | UNIQUE index on user_id confirmed via PRAGMA; no two rows share user_id across tenants |
-| test_2_3_rbac_evaluation_order_tenant_status_role | 2.3 | Business Rules | Inactive user returns 403 before role is checked; mismatched tenant_id returns 403 before role is checked |
-| test_2_4_mfa_required_for_phi_accessing_roles | 2.4 | API | PHI module request from user with mfa_enabled=false returns 403 with MFA enrollment redirect |
-| test_2_5_account_locked_after_five_failed_logins | 2.5 | Business Rules | Fifth failed login sets locked_until; valid login within window returns 401; post-expiry valid login returns 200 |
-| test_2_6_lockout_state_persists_in_database | 2.6 | Business Rules | locked_until persisted in DB; login while locked_until is future returns 401; response omits locked_until value |
-| test_2_7_user_status_state_machine_transitions | 2.7 | Business Rules | Disallowed status transition returns 422; DELETE returns 405; transition to inactive sets deactivated_at |
-| test_2_8_audit_log_on_auth_events_and_user_changes | 2.8 | Business Rules | Login produces AUTH_SUCCESS or AUTH_FAILURE event; User role change produces PHI_WRITE listing field names only |
-| test_2_9_password_stored_as_hash_never_plaintext | 2.9 | DB | password_hash column contains only bcrypt/Argon2id pattern; no plaintext string present in any row or audit log |
-| test_2_10_90_day_password_rotation_and_reuse_prevention | 2.10 | Business Rules | Login with password age > 90 days returns 403 PASSWORD_EXPIRED; prior hash reuse returns 422 PASSWORD_REUSE_PROHIBITED |
-| test_2_11_dormant_account_auto_deactivated_after_90_days | 2.11 | Business Rules | Job query identifies accounts with last_login_at > 90 days; each transitions to inactive with ACCOUNT_AUTO_DEACTIVATED audit event |
-| test_2_12_optimistic_locking_version_conflict_returns_409 | 2.12 | Business Rules | PATCH with stale version returns 409 USER_VERSION_CONFLICT; correct version returns 200 with version n+1 |
+| test_tc_2_1_positive_user_creation_by_program_administrator | TC-2.1 | API | POST /users by program_administrator returns 201 with all required fields and status active |
+| test_tc_2_2_user_creation_by_unauthorized_role_returns_403 | TC-2.2 | API | POST /users by care_coordinator returns 403; no user row created in DB |
+| test_tc_2_3_positive_login_valid_credentials_returns_200 | TC-2.3 | API | POST /login with valid user_id and correct password returns 200 with status ok; last_login_at updated in DB |
+| test_tc_2_4_login_wrong_password_returns_401_no_credential_disclosure | TC-2.4 | API | POST /login with wrong non-empty password returns 401; message does not reveal email, user_id, or password; failed_login_count incremented in DB |
+| test_tc_2_5_duplicate_email_same_tenant_returns_409 | TC-2.5 | API | POST with email already registered in same tenant returns 409 USER_DUPLICATE_EMAIL; exactly one row with that email in DB |
+| test_tc_2_6_same_email_different_tenant_returns_201 | TC-2.6 | API | POST with same email in different tenant returns 201; two rows with that email coexist across tenants in DB |
+| test_tc_2_7_account_lockout_after_5_failed_logins | TC-2.7 | Business Rules | 5 consecutive wrong-password logins lock the account; 6th attempt returns 401 ACCOUNT_LOCKED; locked_until set in DB |
+| test_tc_2_8_locked_user_login_returns_401_account_locked | TC-2.8 | Business Rules | Locked user login with correct password returns 401 ACCOUNT_LOCKED; locked_until remains set in DB |
+| test_tc_2_9_soft_delete_user_returns_200_status_inactive | TC-2.9 | API | PATCH status=inactive returns 200 with status inactive; deactivated_at set in DB; row persists (no physical removal) |
+| test_tc_2_10_audit_log_on_user_creation_has_mandatory_fields_no_pii | TC-2.10 | Business Rules | PHI_WRITE audit event after user creation has all 11 mandatory fields non-null and no PII values in data_affected |
+| test_tc_2_11_missing_email_returns_400_or_422_with_field_name | TC-2.11 | API | POST without email returns 400 or 422 identifying email in the error; no user row created in DB |
+| test_tc_2_12_billing_specialist_create_participant_returns_403 | TC-2.12 | API | POST /participants by billing_specialist returns 403; no participant row created in DB |
+| test_tc_2_13_nurse_create_claim_returns_403 | TC-2.13 | API | POST /claims by nurse_medication_aide returns 403; claim count for the participant unchanged in DB |
 
 ### 2.3 test_attendance.py - Attendance (8 tests)
 
@@ -193,26 +196,26 @@ Data integrity gate. Bypasses the application and asserts directly against the S
 
 ### 5.1 REQ_ID Coverage
 
-All 57 Phase 1 requirements have a dedicated test function. The table below shows the count per entity.
+All 60 Phase 1 test cases have a dedicated test function. The table below shows the count per entity.
 
-| Entity | REQ_IDs | Test Functions | Uncovered |
+| Entity | TCs | Test Functions | Uncovered |
 |---|---|---|---|
-| Participant | 1.1 - 1.10 | 10 | 0 |
-| User | 2.1 - 2.12 | 12 | 0 |
+| Participant | TC-1.1 - TC-1.12 | 12 | 0 |
+| User | TC-2.1 - TC-2.13 | 13 | 0 |
 | Attendance | 3.1 - 3.8 | 8 | 0 |
 | Claim | 4.1 - 4.9 | 9 | 0 |
 | MARRecord | 5.1 - 5.10 | 10 | 0 |
 | Incident | 6.1 - 6.8 | 8 | 0 |
-| **Total** | **57** | **57** | **0** |
+| **Total** | **60** | **60** | **0** |
 
 ### 5.2 Test Layer Distribution
 
 | Layer | Tests | Primary Use |
 |---|---|---|
-| API | 35 | Single-request status codes, error codes, response shape, field rejection |
-| Business Rules | 44 | Multi-step flows, state machines, calculations, audit event verification |
-| DB | 11 | Index presence, constraint existence, column defaults, schema assertions |
-| **Total** | **90** | |
+| API | 45 | Single-request status codes, error codes, response shape, field rejection |
+| Business Rules | 39 | Multi-step flows, state machines, calculations, audit event verification |
+| DB | 9 | Index presence, constraint existence, column defaults, schema assertions |
+| **Total** | **93** | |
 
 ### 5.3 Gate Group to Test File Mapping
 
