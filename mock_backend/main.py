@@ -395,7 +395,13 @@ def soft_delete_participant(participant_id: str, request: Request, db: Session =
 
 @app.delete("/participants/{participant_id}/hard", status_code=405, tags=["participants"])
 def hard_delete_participant(participant_id: str):
-    _405("Physical deletion of participant records is prohibited.")
+    raise HTTPException(
+        status_code=405,
+        detail={
+            "error_code": "HARD_DELETE_NOT_PERMITTED",
+            "message": "Physical deletion of participant records is prohibited under HIPAA retention rules.",
+        },
+    )
 
 
 # ─── Users ────────────────────────────────────────────────────────────────────
@@ -546,8 +552,11 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=403, detail={"error_code": "PASSWORD_EXPIRED", "message": "Password has expired. Please reset."})
 
-    # Simulate password check: password must be non-empty (mock — no real bcrypt)
-    if not body.password:
+    # Simulate password check (mock: plaintext comparison when hash is stored)
+    password_rejected = (not body.password) or (
+        bool(row.password_hash) and body.password != row.password_hash
+    )
+    if password_rejected:
         row.failed_login_count = (row.failed_login_count or 0) + 1
         if row.failed_login_count >= 5:
             row.locked_until = now + timedelta(minutes=30)

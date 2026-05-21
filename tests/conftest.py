@@ -76,6 +76,7 @@ def session_client(session_engine):
 
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app, raise_server_exceptions=True) as c:
+        c.timeout = 5.0  # 5-second timeout; triggers httpx.TimeoutException if backend hangs
         yield c
     app.dependency_overrides.clear()
 
@@ -142,11 +143,12 @@ def users(session_client, tenant):
         for i in range(count):
             slug = f"{role.replace('_', '-')}-{i+1:02d}"
             payload = {
-                "tenant_id":  tenant,
-                "first_name": _first[role][i],
-                "last_name":  _last[role][i],
-                "email":      f"{slug}@test.care",
-                "role":       role,
+                "tenant_id":     tenant,
+                "first_name":    _first[role][i],
+                "last_name":     _last[role][i],
+                "email":         f"{slug}@test.care",
+                "role":          role,
+                "password_hash": "ValidPass1!",
             }
             r = session_client.post("/users", json=payload, headers=_ADMIN)
             assert r.status_code == 201, (
