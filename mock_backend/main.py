@@ -699,6 +699,9 @@ def patch_attendance(attendance_id: str, body: AttendancePatch, request: Request
     if not row:
         _404("Attendance", attendance_id)
 
+    if row.status == "billed":
+        _422("ATTENDANCE_BILLED_IMMUTABLE", "Billed attendance records cannot be modified.")
+
     # Void restrictions
     if body.status and body.status.value == "voided":
         if not body.void_reason:

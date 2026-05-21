@@ -19,7 +19,7 @@ The mock backend is the sole target. Tests run against a local SQLite database s
 |---|---|---|---|
 | Participant | 3.1 | HIPAA - 42 CFR Part 2 (via is_sud_record) - CMS | 12 |
 | User | 3.2 | HIPAA Workforce §164.308(a)(3) | 13 |
-| Attendance | 3.3 | HIPAA - CMS billing integrity | 8 |
+| Attendance | 3.3 | HIPAA - CMS billing integrity | 12 |
 | Claim | 3.4 | HIPAA - CMS Medicaid/Medicare - EDI X12 | 9 |
 | MARRecord | 3.5 | HIPAA - 42 CFR Part 2 (via is_controlled_substance) | 10 |
 | Incident | 3.6 | HIPAA - State licensing - 42 CFR Part 2 (via is_sud_related) | 8 |
@@ -407,17 +407,21 @@ def test_tc_2_12_billing_specialist_create_participant_returns_403
 def test_tc_2_13_nurse_create_claim_returns_403
 ```
 
-**test_attendance.py** - 8 functions (REQ_IDs 3.1 - 3.8)
+**test_attendance.py** - 12 functions (TC-3.1 - TC-3.12)
 
 ```
-def test_3_1_unique_attendance_per_participant_per_date
-def test_3_2_rbac_write_restricted_to_program_administrator_and_care_coordinator
-def test_3_3_attendance_status_state_machine_transitions
-def test_3_4_void_reason_required_when_status_is_voided
-def test_3_5_audit_log_on_attendance_write_operations
-def test_3_6_authorized_units_consumed_derived_from_total_hours
-def test_3_7_void_blocked_when_referencing_claim_is_active
-def test_3_8_optimistic_locking_version_conflict_returns_409
+def test_tc_3_1_positive_attendance_creation_by_program_administrator
+def test_tc_3_2_positive_attendance_creation_by_care_coordinator
+def test_tc_3_3_missing_date_of_service_returns_400
+def test_tc_3_4_missing_participant_id_returns_400
+def test_tc_3_5_duplicate_participant_date_returns_409
+def test_tc_3_6_status_transition_pending_to_confirmed
+def test_tc_3_7_void_with_void_reason_returns_200
+def test_tc_3_8_void_without_void_reason_returns_422
+def test_tc_3_9_billing_units_total_hours_to_authorized_units_consumed
+def test_tc_3_10_billed_attendance_cannot_be_modified
+def test_tc_3_11_audit_log_on_creation_has_mandatory_fields_no_phi
+def test_tc_3_12_billing_specialist_create_attendance_returns_403
 ```
 
 **test_claim.py** - 9 functions (REQ_IDs 4.1 - 4.9)

@@ -5,7 +5,7 @@ Full QA infrastructure built from scratch for a HIPAA, 42 CFR Part 2, CMS, ISO 1
 ## Documents
 
 - [Requirements Phase 1](https://docs.google.com/spreadsheets/d/1zMsnvdmbzKZpY19QxgiGqnPbk7Alo9Xa/edit?usp=sharing) — 58 requirements grouped by entity with regulatory references.
-- [Test Cases Phase 1](https://docs.google.com/spreadsheets/d/1Gz7FyMkqDEW47lkmzN_rxcnDP1QMCbQo/edit?usp=sharing) — test cases for Participant and User entity groups.
+- [Test Cases Phase 1](https://docs.google.com/spreadsheets/d/1W1RBoxOrXDNy0VksfFvdyd_4c2bAtcHw/edit?usp=sharing) — test cases for Participant, User, and Attendance entity groups.
 - [Test Strategy Phase 1](https://docs.google.com/document/d/1cffLTEYunaSdMJdLkN16xwPz5mW87flu/edit?usp=sharing) — risk-based strategy, fixture layer design, CI gate.
 - [Test Plan Phase 1](https://docs.google.com/document/d/17dquqNgr0keI6PMf_dw51UScxh6K9yvM/edit?usp=sharing) — 93 atomic test functions mapped to REQ_IDs.
 - [architecture.md](architecture.md)
@@ -19,7 +19,8 @@ Full QA infrastructure built from scratch for a HIPAA, 42 CFR Part 2, CMS, ISO 1
 |---|---|---|
 | tests/test_participant.py | passing | 12 |
 | tests/test_user.py | passing | 13 |
-| **Total** | | **25** |
+| tests/test_attendance.py | passing | 12 |
+| **Total** | | **37** |
 
 ## Stack
 

@@ -11,7 +11,7 @@
 |---|---|---|---|---|
 | test_participant.py | 12 | TC-1.1 - TC-1.12 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, State machine, Soft delete, Mandatory fields |
 | test_user.py | 13 | TC-2.1 - TC-2.13 | API, Business Rules | Unique constraints, RBAC, Auth, Account lockout, State machine, Audit log, Mandatory fields |
-| test_attendance.py | 8 | 3.1 - 3.8 | API, Business Rules | Unique constraints, RBAC, State machine, Optimistic locking |
+| test_attendance.py | 12 | TC-3.1 - TC-3.12 | API, Business Rules | Unique constraints, RBAC, State machine, Billing units, Audit log, Billed immutability |
 | test_claim.py | 9 | 4.1 - 4.9 | API, Business Rules | Unique constraints, RBAC, State machine, Optimistic locking |
 | test_mar_record.py | 10 | 5.1 - 5.10 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, Optimistic locking |
 | test_incident.py | 8 | 6.1 - 6.8 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, State machine, Optimistic locking |
@@ -19,7 +19,7 @@
 | test_rbac_sweep.py | 9 | Cross-cutting | API | RBAC enforcement (security gate) |
 | test_tenant_isolation.py | 7 | Cross-cutting | API, Business Rules | Tenant isolation (security gate) |
 | db/test_schema.py | 8 | Cross-cutting | DB | Schema and constraint assertions (data integrity gate) |
-| **Total** | **93** | **60 entity TCs** | | |
+| **Total** | **97** | **64 entity TCs** | | |
 
 ---
 
@@ -60,18 +60,22 @@
 | test_tc_2_12_billing_specialist_create_participant_returns_403 | TC-2.12 | API | POST /participants by billing_specialist returns 403; no participant row created in DB |
 | test_tc_2_13_nurse_create_claim_returns_403 | TC-2.13 | API | POST /claims by nurse_medication_aide returns 403; claim count for the participant unchanged in DB |
 
-### 2.3 test_attendance.py - Attendance (8 tests)
+### 2.3 test_attendance.py - Attendance (12 tests)
 
-| Test Function | REQ_ID | Layer | What Is Verified |
+| Test Function | TC | Layer | What Is Verified |
 |---|---|---|---|
-| test_3_1_unique_attendance_per_participant_per_date | 3.1 | API | POST second Attendance for same participant_id and date_of_service in same tenant returns 409 ATTENDANCE_DUPLICATE_DATE |
-| test_3_2_rbac_write_restricted_to_program_administrator_and_care_coordinator | 3.2 | API | POST or PATCH from billing_specialist, physician, or participant_family returns 403; authorized roles succeed |
-| test_3_3_attendance_status_state_machine_transitions | 3.3 | Business Rules | Edit to confirmed record resets status to pending; pending Attendance referenced in Claim returns 422 |
-| test_3_4_void_reason_required_when_status_is_voided | 3.4 | API | PATCH to voided without void_reason returns 422 Unprocessable Entity; with void_reason returns 200 |
-| test_3_5_audit_log_on_attendance_write_operations | 3.5 | Business Rules | Any Attendance write produces audit event with all mandatory fields; data_affected lists field names only |
-| test_3_6_authorized_units_consumed_derived_from_total_hours | 3.6 | Business Rules | Medicaid sign-out of 6 h sets authorized_units_consumed=24; Medicare daily-rate sign-out sets value=1.00 |
-| test_3_7_void_blocked_when_referencing_claim_is_active | 3.7 | Business Rules | Void on billed Attendance with active Claim returns 422; void attempt by care_coordinator returns 403 |
-| test_3_8_optimistic_locking_version_conflict_returns_409 | 3.8 | Business Rules | PATCH with stale version returns 409 ATTENDANCE_VERSION_CONFLICT; correct version returns 200 with version n+1 |
+| test_tc_3_1_positive_attendance_creation_by_program_administrator | TC-3.1 | API | POST /attendance by program_administrator returns 201 with status pending and all required fields |
+| test_tc_3_2_positive_attendance_creation_by_care_coordinator | TC-3.2 | API | POST /attendance by care_coordinator returns 201 with status pending; row persisted in DB |
+| test_tc_3_3_missing_date_of_service_returns_400 | TC-3.3 | API | POST /attendance without date_of_service returns 400 or 422 identifying date_of_service; no row created |
+| test_tc_3_4_missing_participant_id_returns_400 | TC-3.4 | API | POST /attendance without participant_id returns 400 or 422 identifying participant_id; no row created |
+| test_tc_3_5_duplicate_participant_date_returns_409 | TC-3.5 | API | POST second Attendance for same participant_id and date_of_service returns 409 ATTENDANCE_DUPLICATE_DATE; exactly one row in DB |
+| test_tc_3_6_status_transition_pending_to_confirmed | TC-3.6 | Business Rules | PATCH status from pending to confirmed returns 200; DB shows confirmed and version n+1 |
+| test_tc_3_7_void_with_void_reason_returns_200 | TC-3.7 | Business Rules | PATCH with status=voided and void_reason returns 200; DB shows voided and void_reason persisted |
+| test_tc_3_8_void_without_void_reason_returns_422 | TC-3.8 | Business Rules | PATCH with status=voided but no void_reason returns 422 VOID_REASON_REQUIRED; DB status unchanged |
+| test_tc_3_9_billing_units_total_hours_to_authorized_units_consumed | TC-3.9 | Business Rules | total_hours converted server-side at Medicaid rate (1 h = 4 units); 6 h → 24, 8 h → 32; verified in DB |
+| test_tc_3_10_billed_attendance_cannot_be_modified | TC-3.10 | Business Rules | PATCH on billed attendance returns 422 ATTENDANCE_BILLED_IMMUTABLE; DB status remains billed |
+| test_tc_3_11_audit_log_on_creation_has_mandatory_fields_no_phi | TC-3.11 | Business Rules | PHI_WRITE audit event after POST /attendance has all 11 mandatory fields non-null and no PHI values in data_affected |
+| test_tc_3_12_billing_specialist_create_attendance_returns_403 | TC-3.12 | API | POST /attendance by billing_specialist returns 403; attendance count for participant unchanged in DB |
 
 ### 2.4 test_claim.py - Claim (9 tests)
 
@@ -202,20 +206,20 @@ All 60 Phase 1 test cases have a dedicated test function. The table below shows 
 |---|---|---|---|
 | Participant | TC-1.1 - TC-1.12 | 12 | 0 |
 | User | TC-2.1 - TC-2.13 | 13 | 0 |
-| Attendance | 3.1 - 3.8 | 8 | 0 |
+| Attendance | TC-3.1 - TC-3.12 | 12 | 0 |
 | Claim | 4.1 - 4.9 | 9 | 0 |
 | MARRecord | 5.1 - 5.10 | 10 | 0 |
 | Incident | 6.1 - 6.8 | 8 | 0 |
-| **Total** | **60** | **60** | **0** |
+| **Total** | **64** | **64** | **0** |
 
 ### 5.2 Test Layer Distribution
 
 | Layer | Tests | Primary Use |
 |---|---|---|
-| API | 45 | Single-request status codes, error codes, response shape, field rejection |
-| Business Rules | 39 | Multi-step flows, state machines, calculations, audit event verification |
+| API | 48 | Single-request status codes, error codes, response shape, field rejection |
+| Business Rules | 40 | Multi-step flows, state machines, calculations, audit event verification |
 | DB | 9 | Index presence, constraint existence, column defaults, schema assertions |
-| **Total** | **93** | |
+| **Total** | **97** | |
 
 ### 5.3 Gate Group to Test File Mapping
 
