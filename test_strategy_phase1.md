@@ -20,7 +20,7 @@ The mock backend is the sole target. Tests run against a local SQLite database s
 | Participant | 3.1 | HIPAA - 42 CFR Part 2 (via is_sud_record) - CMS | 12 |
 | User | 3.2 | HIPAA Workforce §164.308(a)(3) | 13 |
 | Attendance | 3.3 | HIPAA - CMS billing integrity | 12 |
-| Claim | 3.4 | HIPAA - CMS Medicaid/Medicare - EDI X12 | 9 |
+| Claim | 3.4 | HIPAA - CMS Medicaid/Medicare - EDI X12 | 15 |
 | MARRecord | 3.5 | HIPAA - 42 CFR Part 2 (via is_controlled_substance) | 10 |
 | Incident | 3.6 | HIPAA - State licensing - 42 CFR Part 2 (via is_sud_related) | 8 |
 
@@ -287,6 +287,10 @@ The CI gate is a set of test groups that must all pass before a Phase 1 release 
 | Optimistic locking - all entities | Data Integrity | Concurrent-edit data loss corrupts PHI records and audit trail |
 | Tenant isolation | Security | Cross-tenant PHI access is a multi-party HIPAA breach |
 | Phase 2 field rejection on Claim | Functional | Phase 1 API contract - prevents schema corruption |
+| Attendance integrity - Claim | Functional | Confirmed-only attendance gate prevents erroneous billing artifacts |
+| Mandatory fields - Claim | Functional | Minimum required fields enforced on Claim creation |
+| Billing units server-calculated - Claim | Functional | Server-calculated units_billed prevents billing manipulation |
+| Not found handling - Claim | Functional | Non-existent resource returns 404 with structured error body |
 
 ### 6.3 Non-Blocking (Informational) Groups
 
@@ -424,18 +428,24 @@ def test_tc_3_11_audit_log_on_creation_has_mandatory_fields_no_phi
 def test_tc_3_12_billing_specialist_create_attendance_returns_403
 ```
 
-**test_claim.py** - 9 functions (REQ_IDs 4.1 - 4.9)
+**test_claim.py** - 15 functions (TC-4.1 - TC-4.15)
 
 ```
-def test_4_1_unique_claim_reference_number_globally
-def test_4_2_composite_unique_key_prevents_duplicate_billing
-def test_4_3_rbac_write_restricted_to_billing_specialist_and_program_administrator
-def test_4_4_claim_status_state_machine_transitions
-def test_4_5_claim_requires_confirmed_attendance_records
-def test_4_6_audit_log_on_claim_creation_and_submission
-def test_4_7_claim_generated_from_attendance_units_not_blank
-def test_4_8_phase2_deferred_fields_rejected_with_400
-def test_4_9_optimistic_locking_version_conflict_returns_409
+def test_tc_4_1_duplicate_claim_reference_number_returns_409
+def test_tc_4_2_composite_unique_key_prevents_duplicate_billing
+def test_tc_4_3_rbac_unauthorized_roles_return_403_db_count_unchanged
+def test_tc_4_4_claim_status_immutability_and_transitions
+def test_tc_4_5_claim_requires_confirmed_attendance_records
+def test_tc_4_6_multi_attendance_units_billed_server_calculated
+def test_tc_4_7_missing_required_fields_return_400_with_field_name
+def test_tc_4_8_audit_log_phi_write_and_phi_disclose_events
+def test_tc_4_9_empty_attendance_ids_and_server_calculates_units_billed
+def test_tc_4_10_phase2_fields_rejected_with_400
+def test_tc_4_11_optimistic_locking_version_conflict_returns_409
+def test_tc_4_12_cross_tenant_attendance_reference_rejected
+def test_tc_4_13_already_billed_attendance_cannot_be_reclaimed
+def test_tc_4_14_get_nonexistent_claim_returns_404
+def test_tc_4_15_paid_claim_fully_immutable
 ```
 
 **test_mar_record.py** - 10 functions (REQ_IDs 5.1 - 5.10)

@@ -10,13 +10,14 @@ All session-scoped data fixtures create records exclusively through API endpoint
 No direct SQL inserts.  Function-scoped fresh_* fixtures isolate per-test state
 and clean up after themselves via API calls.
 """
+import json
 import os
 import sys
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -499,3 +500,376 @@ def fresh_incident(session_client, tenant):
     except Exception:
         pass
     _soft_delete(session_client, p["participant_id"])
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CLAIM TEST FIXTURES (TC-4.x)
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── fresh_confirmed_attendance ────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def fresh_confirmed_attendance(session_client, tenant):
+    """
+    Yields (attendance, participant) for one confirmed Attendance with no claim.
+    Teardown: soft-deletes the participant.
+    """
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    att = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-05-01",
+        total_hours=1.0,
+    )
+    yield att, p
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── claim_dup_ref_setup ───────────────────────────────────────────────────────
+
+_FIXED_DUP_REF = "MCD-20260301-DUPREF1"
+
+
+@pytest.fixture(scope="function")
+def claim_dup_ref_setup(session_client, tenant, db_session, monkeypatch):
+    """
+    TC-4.1 fixture.
+    Inserts a claim with _FIXED_DUP_REF directly into the DB, then patches
+    _gen_claim_ref so every POST /claims attempt generates that same value.
+    After 5 collisions the server returns CLAIM_DUPLICATE_REFERENCE (409).
+    Yields (participant, confirmed_attendance, ref_number).
+    """
+    import main as _backend_main
+
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    att = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-05-03",
+    )
+    # Direct insert: pre-seed a claim that owns the fixed reference number.
+    # A placeholder participant_id is used so the composite duplicate check
+    # cannot fire when the test POSTs using p["participant_id"].
+    db_session.execute(
+        text(
+            "INSERT INTO claim "
+            "(claim_id, tenant_id, participant_id, attendance_ids, payer_type, "
+            "claim_reference_number, procedure_code, date_of_service_start, "
+            "claim_status, version, created_at, updated_at) VALUES "
+            "(:cid, :tid, 'placeholder-pid-dup-ref', :aids, 'medicaid', :ref, "
+            "'T2029', '2026-05-04', 'draft', 1, datetime('now'), datetime('now'))"
+        ),
+        {
+            "cid": str(uuid.uuid4()),
+            "tid": tenant,
+            "aids": json.dumps([]),
+            "ref": _FIXED_DUP_REF,
+        },
+    )
+    db_session.commit()
+    monkeypatch.setattr(_backend_main, "_gen_claim_ref", lambda _pt: _FIXED_DUP_REF)
+    yield p, att, _FIXED_DUP_REF
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── claim_dup_composite_setup ─────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def claim_dup_composite_setup(session_client, tenant):
+    """
+    TC-4.2 fixture.
+    Creates participant P1, confirmed att1 (used in existing claim), an
+    existing claim keyed on (P1, 2026-03-01, T2029, medicaid), and confirmed
+    att2 (used in the duplicate POST attempt).
+    Yields (participant, att1, existing_claim, att2).
+    """
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    att1 = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-05-05",
+    )
+    existing_claim = make_claim(
+        session_client, _BILLING,
+        participant_id=p["participant_id"],
+        attendance_ids=[att1["attendance_id"]],
+        tenant_id=tenant,
+        date_of_service_start="2026-03-01",
+        procedure_code="T2029",
+        payer_type="medicaid",
+    )
+    att2 = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-05-06",
+    )
+    yield p, att1, existing_claim, att2
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── attendance_variety_setup ──────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def attendance_variety_setup(session_client, tenant):
+    """
+    TC-4.5 / TC-4.12 fixture.
+    Yields a dict with keys:
+        participant      : active participant in TENANT_A
+        att_pending      : pending attendance (TENANT_A)
+        att_voided       : voided attendance (TENANT_A)
+        att_confirmed    : confirmed attendance (TENANT_A, total_hours=1.0)
+        att_other_tenant : confirmed attendance in TENANT_B
+        participant_b    : participant in TENANT_B
+    """
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    att_pending = make_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-06-01",
+    )
+    att_to_void = make_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-06-02",
+    )
+    r_void = session_client.patch(
+        f"/attendance/{att_to_void['attendance_id']}",
+        json={
+            "version": att_to_void["version"],
+            "status": "voided",
+            "void_reason": "TC-4.5 fixture setup",
+        },
+        headers=_ADMIN,
+    )
+    assert r_void.status_code == 200, f"Failed to void attendance: {r_void.text}"
+    att_voided = r_void.json()
+
+    att_confirmed = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-06-03",
+        total_hours=1.0,
+    )
+
+    _admin_b = make_headers(
+        "program_administrator", tenant_id=TENANT_B, user_id="bootstrap-admin-tenantb-claim-001"
+    )
+    _coord_b = make_headers(
+        "care_coordinator", tenant_id=TENANT_B, user_id="bootstrap-coord-tenantb-claim-001"
+    )
+    p_b = make_participant(
+        session_client, _admin_b,
+        tenant_id=TENANT_B,
+        medicaid_id=_unique_medicaid(),
+    )
+    att_other = make_confirmed_attendance(
+        session_client, _coord_b,
+        participant_id=p_b["participant_id"],
+        tenant_id=TENANT_B,
+        date_of_service="2026-06-04",
+        total_hours=1.0,
+    )
+
+    yield {
+        "participant": p,
+        "att_pending": att_pending,
+        "att_voided": att_voided,
+        "att_confirmed": att_confirmed,
+        "att_other_tenant": att_other,
+        "participant_b": p_b,
+    }
+    _soft_delete(session_client, p["participant_id"])
+    _soft_delete(session_client, p_b["participant_id"])
+
+
+# ── three_confirmed_attendances ───────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def three_confirmed_attendances(session_client, tenant):
+    """
+    TC-4.6 fixture.
+    Participant P1 with three confirmed attendances:
+        att_a: total_hours=1.0 → authorized_units_consumed=4.0
+        att_b: total_hours=1.5 → authorized_units_consumed=6.0
+        att_c: total_hours=2.0 → authorized_units_consumed=8.0
+    Sum = 18.0; server uses this sum as units_billed when creating a claim.
+    Yields (participant, att_a, att_b, att_c).
+    """
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    att_a = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-07-01",
+        total_hours=1.0,
+    )
+    att_b = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-07-02",
+        total_hours=1.5,
+    )
+    att_c = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-07-03",
+        total_hours=2.0,
+    )
+    yield p, att_a, att_b, att_c
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── submitted_and_paid_claims ─────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def submitted_and_paid_claims(session_client, tenant):
+    """
+    TC-4.4 / TC-4.15 fixture.
+    claim_submitted: draft → submitted via PATCH claim_status="submitted".
+    claim_paid:      draft → paid via PATCH claim_status="paid" (direct override).
+    Yields (claim_submitted, claim_paid, participant_a, participant_b).
+    """
+    p_a = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    att_a = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p_a["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-08-01",
+    )
+    c_a = make_claim(
+        session_client, _BILLING,
+        participant_id=p_a["participant_id"],
+        attendance_ids=[att_a["attendance_id"]],
+        tenant_id=tenant,
+        date_of_service_start="2026-08-01",
+    )
+    r_sub = session_client.patch(
+        f"/claims/{c_a['claim_id']}",
+        json={"version": c_a["version"], "claim_status": "submitted"},
+        headers=_BILLING,
+    )
+    assert r_sub.status_code == 200, f"Failed to submit claim: {r_sub.text}"
+    claim_submitted = r_sub.json()
+
+    p_b = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    att_b = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p_b["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-08-02",
+    )
+    c_b = make_claim(
+        session_client, _BILLING,
+        participant_id=p_b["participant_id"],
+        attendance_ids=[att_b["attendance_id"]],
+        tenant_id=tenant,
+        date_of_service_start="2026-08-02",
+    )
+    r_paid = session_client.patch(
+        f"/claims/{c_b['claim_id']}",
+        json={"version": c_b["version"], "claim_status": "paid"},
+        headers=_BILLING,
+    )
+    assert r_paid.status_code == 200, f"Failed to set claim to paid: {r_paid.text}"
+    claim_paid = r_paid.json()
+
+    yield claim_submitted, claim_paid, p_a, p_b
+    _soft_delete(session_client, p_a["participant_id"])
+    _soft_delete(session_client, p_b["participant_id"])
+
+
+# ── draft_and_submitted_claims ────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def draft_and_submitted_claims(session_client, tenant):
+    """
+    TC-4.11 fixture.
+    C_A: draft claim (version=1 after creation).
+    C_B: draft → submitted (version incremented after submit PATCH).
+    Yields (claim_draft, claim_submitted, participant_a, participant_b).
+    """
+    p_a = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    att_a = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p_a["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-09-01",
+    )
+    c_a = make_claim(
+        session_client, _BILLING,
+        participant_id=p_a["participant_id"],
+        attendance_ids=[att_a["attendance_id"]],
+        tenant_id=tenant,
+        date_of_service_start="2026-09-01",
+    )
+
+    p_b = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    att_b = make_confirmed_attendance(
+        session_client, _COORD,
+        participant_id=p_b["participant_id"],
+        tenant_id=tenant,
+        date_of_service="2026-09-02",
+    )
+    c_b_draft = make_claim(
+        session_client, _BILLING,
+        participant_id=p_b["participant_id"],
+        attendance_ids=[att_b["attendance_id"]],
+        tenant_id=tenant,
+        date_of_service_start="2026-09-02",
+    )
+    r_sub = session_client.patch(
+        f"/claims/{c_b_draft['claim_id']}",
+        json={"version": c_b_draft["version"], "claim_status": "submitted"},
+        headers=_BILLING,
+    )
+    assert r_sub.status_code == 200, f"Failed to submit claim C_B: {r_sub.text}"
+    c_b = r_sub.json()
+
+    yield c_a, c_b, p_a, p_b
+    _soft_delete(session_client, p_a["participant_id"])
+    _soft_delete(session_client, p_b["participant_id"])

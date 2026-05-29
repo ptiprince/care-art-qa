@@ -767,11 +767,14 @@ def create_claim(body: ClaimCreate, request: Request, db: Session = Depends(get_
     if not body.attendance_ids:
         _422("CLAIM_NO_ATTENDANCE_RECORDS", "At least one attendance_id is required.")
 
-    # Validate attendance records exist and are confirmed
+    # Validate attendance records exist within the same tenant and are confirmed
     for att_id in body.attendance_ids:
-        att = db.query(Attendance).filter(Attendance.attendance_id == att_id).first()
+        att = db.query(Attendance).filter(
+            Attendance.attendance_id == att_id,
+            Attendance.tenant_id == body.tenant_id,
+        ).first()
         if not att:
-            _422("ATTENDANCE_NOT_FOUND", f"Attendance record {att_id} does not exist.")
+            _422("CLAIM_ATTENDANCE_NOT_FOUND", f"Attendance record {att_id} does not exist.")
         if att.status != "confirmed":
             _422(
                 "ATTENDANCE_NOT_CONFIRMED",
@@ -802,6 +805,16 @@ def create_claim(body: ClaimCreate, request: Request, db: Session = Depends(get_
 
     now = datetime.now(timezone.utc)
     data = body.model_dump()
+
+    # Server-calculates units_billed; caller-supplied value is ignored entirely.
+    att_rows = [
+        db.query(Attendance).filter(Attendance.attendance_id == aid).first()
+        for aid in body.attendance_ids
+    ]
+    data["units_billed"] = sum(
+        float(a.authorized_units_consumed or 0) for a in att_rows
+    )
+
     row = Claim(
         claim_id=str(uuid.uuid4()),
         claim_reference_number=ref,
@@ -813,8 +826,7 @@ def create_claim(body: ClaimCreate, request: Request, db: Session = Depends(get_
     db.flush()
 
     # Mark attendance records as billed
-    for att_id in body.attendance_ids:
-        att = db.query(Attendance).filter(Attendance.attendance_id == att_id).first()
+    for att in att_rows:
         att.status = "billed"
         att.updated_at = now
 
@@ -877,10 +889,10 @@ def patch_claim(claim_id: str, body: ClaimPatch, request: Request, db: Session =
     if not row:
         _404("Claim", claim_id)
 
-    # Immutable states: submitted and paid
+    # Immutable states: submitted and paid — checked before version validation
     if row.claim_status in ("submitted", "paid"):
         _422(
-            "CLAIM_STATUS_IMMUTABLE",
+            "CLAIM_FIELD_IMMUTABLE",
             f"Claim in status '{row.claim_status}' cannot be modified.",
         )
 

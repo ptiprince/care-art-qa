@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     Time,
     UniqueConstraint,
+    text,
 )
 
 from database import Base
@@ -175,7 +176,7 @@ class Participant(Base):
     created_by = Column(String(36))
     updated_by = Column(String(36))
     version = Column(Integer, default=1, nullable=False)
-    is_deleted = Column(Boolean, default=False, nullable=False)
+    is_deleted = Column(Boolean, default=False, server_default=text("0"), nullable=False)
 
 
 class User(Base):
@@ -527,6 +528,8 @@ class AttendanceResponse(_ORM):
 # Claim ────────────────────────────────────────────────────────────────────────
 
 class ClaimCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tenant_id: str
     participant_id: str
     attendance_ids: List[str]

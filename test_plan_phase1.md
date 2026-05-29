@@ -12,14 +12,14 @@
 | test_participant.py | 12 | TC-1.1 - TC-1.12 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, State machine, Soft delete, Mandatory fields |
 | test_user.py | 13 | TC-2.1 - TC-2.13 | API, Business Rules | Unique constraints, RBAC, Auth, Account lockout, State machine, Audit log, Mandatory fields |
 | test_attendance.py | 12 | TC-3.1 - TC-3.12 | API, Business Rules | Unique constraints, RBAC, State machine, Billing units, Audit log, Billed immutability |
-| test_claim.py | 9 | 4.1 - 4.9 | API, Business Rules | Unique constraints, RBAC, State machine, Optimistic locking |
+| test_claim.py | 15 | TC-4.1 - TC-4.15 | API, Business Rules | Unique constraints, RBAC, State machine, Attendance integrity, Mandatory fields, Audit log, Billing units server-calculated, Phase 2 field rejection, Optimistic locking, Tenant isolation, Not found |
 | test_mar_record.py | 10 | 5.1 - 5.10 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, Optimistic locking |
 | test_incident.py | 8 | 6.1 - 6.8 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, State machine, Optimistic locking |
 | test_audit_log.py | 9 | Cross-cutting | DB, Business Rules | Audit log completeness (regulatory gate) |
 | test_rbac_sweep.py | 9 | Cross-cutting | API | RBAC enforcement (security gate) |
 | test_tenant_isolation.py | 7 | Cross-cutting | API, Business Rules | Tenant isolation (security gate) |
 | db/test_schema.py | 8 | Cross-cutting | DB | Schema and constraint assertions (data integrity gate) |
-| **Total** | **97** | **64 entity TCs** | | |
+| **Total** | **103** | **70 entity TCs** | | |
 
 ---
 
@@ -77,19 +77,25 @@
 | test_tc_3_11_audit_log_on_creation_has_mandatory_fields_no_phi | TC-3.11 | Business Rules | PHI_WRITE audit event after POST /attendance has all 11 mandatory fields non-null and no PHI values in data_affected |
 | test_tc_3_12_billing_specialist_create_attendance_returns_403 | TC-3.12 | API | POST /attendance by billing_specialist returns 403; attendance count for participant unchanged in DB |
 
-### 2.4 test_claim.py - Claim (9 tests)
+### 2.4 test_claim.py - Claim (15 tests)
 
-| Test Function | REQ_ID | Layer | What Is Verified |
+| Test Function | TC | Layer | What Is Verified |
 |---|---|---|---|
-| test_4_1_unique_claim_reference_number_globally | 4.1 | API | POST with manually supplied duplicate claim_reference_number returns 409 CLAIM_DUPLICATE_REFERENCE |
-| test_4_2_composite_unique_key_prevents_duplicate_billing | 4.2 | API | POST with duplicate participant_id+date_of_service_start+procedure_code+payer_type returns 409 CLAIM_DUPLICATE |
-| test_4_3_rbac_write_restricted_to_billing_specialist_and_program_administrator | 4.3 | API | POST or PATCH from care_coordinator, nurse_medication_aide, physician, or participant_family returns 403 |
-| test_4_4_claim_status_state_machine_transitions | 4.4 | Business Rules | PATCH any field on submitted or paid Claim returns 422; valid draft-to-submitted transition returns 200 |
-| test_4_5_claim_requires_confirmed_attendance_records | 4.5 | Business Rules | POST referencing pending or voided attendance returns 422; confirmed attendance returns 201 and sets attendance to billed |
-| test_4_6_audit_log_on_claim_creation_and_submission | 4.6 | Business Rules | Claim write produces audit event with all mandatory fields; clearinghouse submission produces PHI_DISCLOSE event |
-| test_4_7_claim_generated_from_attendance_units_not_blank | 4.7 | API | POST with empty attendance_ids returns 422 CLAIM_NO_ATTENDANCE_RECORDS; caller-supplied units_billed is overridden by calculated sum |
-| test_4_8_phase2_deferred_fields_rejected_with_400 | 4.8 | API | POST with secondary_payer_id or any Phase 2 deferred field returns 400 identifying the unsupported field name |
-| test_4_9_optimistic_locking_version_conflict_returns_409 | 4.9 | Business Rules | PATCH draft with stale version returns 409 CLAIM_VERSION_CONFLICT; PATCH submitted returns 422 before version check |
+| test_tc_4_1_duplicate_claim_reference_number_returns_409 | TC-4.1 | API | POST with duplicate claim_reference_number returns 409 CLAIM_DUPLICATE_REFERENCE; DB confirms exactly one claim with that reference |
+| test_tc_4_2_composite_unique_key_prevents_duplicate_billing | TC-4.2 | API | POST with duplicate participant_id+date_of_service_start+procedure_code+payer_type returns 409 CLAIM_DUPLICATE; DB confirms one claim |
+| test_tc_4_3_rbac_unauthorized_roles_return_403_db_count_unchanged | TC-4.3 | API | POST from care_coordinator, nurse_medication_aide, physician, participant_family each returns 403 RBAC_DENIED; DB claim count unchanged |
+| test_tc_4_4_claim_status_immutability_and_transitions | TC-4.4 | Business Rules | PATCH non-status field on submitted returns 422 CLAIM_STATUS_IMMUTABLE; PATCH status returns 200; PATCH paid returns 422; DB status unchanged after rejected edits |
+| test_tc_4_5_claim_requires_confirmed_attendance_records | TC-4.5 | Business Rules | POST referencing pending or voided attendance returns 422; cross-tenant returns 422/404; confirmed attendance returns 201 and sets attendance status to billed |
+| test_tc_4_6_multi_attendance_units_billed_server_calculated | TC-4.6 | Business Rules | POST with multiple confirmed attendance returns 201; DB units_billed equals server-calculated sum of authorized_units_consumed; non-existent UUID returns 422 CLAIM_ATTENDANCE_NOT_FOUND |
+| test_tc_4_7_missing_required_fields_return_400_with_field_name | TC-4.7 | API | POST without participant_id returns 400 identifying field; POST without procedure_code returns 400; POST without payer_type returns 400; no claim created in DB |
+| test_tc_4_8_audit_log_phi_write_and_phi_disclose_events | TC-4.8 | Business Rules | POST produces PHI_WRITE audit event with all 11 mandatory fields non-null and no PHI values; PATCH draft-to-submitted produces PHI_DISCLOSE; GET /audit-logs returns both events |
+| test_tc_4_9_empty_attendance_ids_and_server_calculates_units_billed | TC-4.9 | Business Rules | POST with empty attendance_ids returns 422 CLAIM_NO_ATTENDANCE_RECORDS; server calculates units_billed from authorized_units_consumed; caller-supplied value ignored |
+| test_tc_4_10_phase2_fields_rejected_with_400 | TC-4.10 | API | POST with secondary_payer_id, mco_id, or prior_authorization_number each returns 400; DB no claim created in any case |
+| test_tc_4_11_optimistic_locking_version_conflict_returns_409 | TC-4.11 | Business Rules | PATCH draft with stale version returns 409 CLAIM_VERSION_CONFLICT; submitted returns 422 before version check; correct version returns 200; DB version incremented |
+| test_tc_4_12_cross_tenant_attendance_reference_rejected | TC-4.12 | API | POST referencing attendance from different tenant returns 422 or 404; DB no cross-tenant claim created |
+| test_tc_4_13_already_billed_attendance_cannot_be_reclaimed | TC-4.13 | API | POST referencing attendance with status=billed returns 422 ATTENDANCE_NOT_CONFIRMED; DB no duplicate claim created |
+| test_tc_4_14_get_nonexistent_claim_returns_404 | TC-4.14 | API | GET /claims with non-existent claim_id returns 404 NOT_FOUND; response body contains error_code and claim_id |
+| test_tc_4_15_paid_claim_fully_immutable | TC-4.15 | Business Rules | PATCH paid claim any field returns 422 CLAIM_STATUS_IMMUTABLE; DB claim_status, version, and all fields unchanged after all rejected attempts |
 
 ### 2.5 test_mar_record.py - MARRecord (10 tests)
 
@@ -200,26 +206,26 @@ Data integrity gate. Bypasses the application and asserts directly against the S
 
 ### 5.1 REQ_ID Coverage
 
-All 60 Phase 1 test cases have a dedicated test function. The table below shows the count per entity.
+All 70 Phase 1 test cases have a dedicated test function. The table below shows the count per entity.
 
 | Entity | TCs | Test Functions | Uncovered |
 |---|---|---|---|
 | Participant | TC-1.1 - TC-1.12 | 12 | 0 |
 | User | TC-2.1 - TC-2.13 | 13 | 0 |
 | Attendance | TC-3.1 - TC-3.12 | 12 | 0 |
-| Claim | 4.1 - 4.9 | 9 | 0 |
+| Claim | TC-4.1 - TC-4.15 | 15 | 0 |
 | MARRecord | 5.1 - 5.10 | 10 | 0 |
 | Incident | 6.1 - 6.8 | 8 | 0 |
-| **Total** | **64** | **64** | **0** |
+| **Total** | **70** | **70** | **0** |
 
 ### 5.2 Test Layer Distribution
 
 | Layer | Tests | Primary Use |
 |---|---|---|
-| API | 48 | Single-request status codes, error codes, response shape, field rejection |
-| Business Rules | 40 | Multi-step flows, state machines, calculations, audit event verification |
+| API | 51 | Single-request status codes, error codes, response shape, field rejection |
+| Business Rules | 43 | Multi-step flows, state machines, calculations, audit event verification |
 | DB | 9 | Index presence, constraint existence, column defaults, schema assertions |
-| **Total** | **97** | |
+| **Total** | **103** | |
 
 ### 5.3 Gate Group to Test File Mapping
 
@@ -229,10 +235,14 @@ All 60 Phase 1 test cases have a dedicated test function. The table below shows 
 | RBAC enforcement | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_mar_record.py, test_incident.py, test_rbac_sweep.py | 15 |
 | 42 CFR Part 2 access gate | test_participant.py, test_mar_record.py, test_incident.py | 3 |
 | Audit log completeness | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_mar_record.py, test_incident.py, test_audit_log.py | 15 |
-| State machine transitions | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_incident.py | 6 |
+| State machine transitions | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_incident.py | 8 |
 | Optimistic locking | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_mar_record.py, test_incident.py | 6 |
-| Tenant isolation | test_tenant_isolation.py | 7 |
+| Tenant isolation | test_tenant_isolation.py, test_claim.py | 8 |
 | Phase 2 field rejection | test_claim.py | 1 |
+| Attendance integrity | test_claim.py | 3 |
+| Mandatory fields | test_claim.py | 1 |
+| Billing units server-calculated | test_claim.py | 1 |
+| Not found | test_claim.py | 1 |
 | Schema and constraints (DB backstop) | db/test_schema.py | 8 |
 
 ---
