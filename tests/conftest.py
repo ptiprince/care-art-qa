@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import uuid
+from datetime import datetime, timezone, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -180,6 +181,11 @@ def participants(session_client, tenant, users):
         deceased : single participant dict
         all      : flat list of all 10
     """
+    today = datetime.now(timezone.utc).date()
+
+    def _e(days_ago):
+        return (today - timedelta(days=days_ago)).isoformat()
+
     def _post(first, last, dob, enrolled, medicaid, is_sud=False, **extra):
         payload = {
             "tenant_id":      tenant,
@@ -209,33 +215,33 @@ def participants(session_client, tenant, users):
         )
         return r.json()
 
-    # 7 regular active participants
+    # 7 regular active participants — enrollment dates spread over ~2 years back
     active_seed = [
-        ("Eleanor", "Vasquez",  "1942-03-14", "2024-01-15", "SEED-MC-001"),
-        ("Robert",  "Kimura",   "1938-11-28", "2023-09-01", "SEED-MC-002"),
-        ("Dorothy", "Franklin", "1950-06-05", "2024-03-10", "SEED-MC-003"),
-        ("Harold",  "Nguyen",   "1945-09-20", "2023-05-01", "SEED-MC-004"),
-        ("Agnes",   "Petrov",   "1948-01-12", "2024-06-01", "SEED-MC-005"),
-        ("James",   "Okonkwo",  "1952-07-30", "2024-08-15", "SEED-MC-006"),
-        ("Miriam",  "Torres",   "1955-11-03", "2025-01-10", "SEED-MC-007"),
+        ("Eleanor", "Vasquez",  "1942-03-14", _e(500),  "SEED-MC-001"),
+        ("Robert",  "Kimura",   "1938-11-28", _e(700),  "SEED-MC-002"),
+        ("Dorothy", "Franklin", "1950-06-05", _e(450),  "SEED-MC-003"),
+        ("Harold",  "Nguyen",   "1945-09-20", _e(750),  "SEED-MC-004"),
+        ("Agnes",   "Petrov",   "1948-01-12", _e(350),  "SEED-MC-005"),
+        ("James",   "Okonkwo",  "1952-07-30", _e(290),  "SEED-MC-006"),
+        ("Miriam",  "Torres",   "1955-11-03", _e(130),  "SEED-MC-007"),
     ]
     active = [_post(*row) for row in active_seed]
 
     # 1 SUD-flagged active participant
     p_sud = _post(
-        "Franklin", "Reed", "1961-04-22", "2024-09-01", "SEED-MC-008",
+        "Franklin", "Reed", "1961-04-22", _e(270), "SEED-MC-008",
         is_sud=True,
     )
 
     # 1 on_leave  (active → on_leave)
     p_on_leave = _patch_status(
-        _post("Ingrid", "Bauer", "1949-08-08", "2024-02-01", "SEED-MC-009"),
+        _post("Ingrid", "Bauer", "1949-08-08", _e(480), "SEED-MC-009"),
         "on_leave",
     )
 
     # 1 deceased  (active → deceased)
     p_deceased = _patch_status(
-        _post("Victor", "Sousa", "1935-12-15", "2022-11-01", "SEED-MC-010"),
+        _post("Victor", "Sousa", "1935-12-15", _e(1200), "SEED-MC-010"),
         "deceased",
     )
 
@@ -360,6 +366,7 @@ def fresh_attendance(session_client, tenant):
     Teardown: voids attendance if not already billed/voided, then soft-deletes
     the participant.
     """
+    today = datetime.now(timezone.utc).date()
     p = make_participant(
         session_client, _ADMIN,
         tenant_id=tenant,
@@ -369,7 +376,7 @@ def fresh_attendance(session_client, tenant):
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-03-01",
+        date_of_service=(today - timedelta(days=10)).isoformat(),
     )
     yield att, p
 
@@ -407,6 +414,7 @@ def fresh_claim(session_client, tenant):
     cannot be voided; the claim has no delete endpoint — both remain in the DB
     as orphaned records tied to the soft-deleted participant.
     """
+    today = datetime.now(timezone.utc).date()
     p = make_participant(
         session_client, _ADMIN,
         tenant_id=tenant,
@@ -416,7 +424,7 @@ def fresh_claim(session_client, tenant):
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-03-01",
+        date_of_service=(today - timedelta(days=11)).isoformat(),
     )
     claim = make_claim(
         session_client, _BILLING,
@@ -437,6 +445,7 @@ def fresh_mar_record(session_client, tenant):
 
     Teardown: soft-deletes the participant (MAR record has no delete endpoint).
     """
+    scheduled = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
     p = make_participant(
         session_client, _ADMIN,
         tenant_id=tenant,
@@ -448,7 +457,7 @@ def fresh_mar_record(session_client, tenant):
         participant_id=p["participant_id"],
         administered_by=nurse_user["user_id"],
         tenant_id=tenant,
-        scheduled_time="2026-03-01T09:00:00",
+        scheduled_time=scheduled,
         status="administered",
     )
     yield mar, nurse_user, p
@@ -514,6 +523,7 @@ def fresh_confirmed_attendance(session_client, tenant):
     Yields (attendance, participant) for one confirmed Attendance with no claim.
     Teardown: soft-deletes the participant.
     """
+    today = datetime.now(timezone.utc).date()
     p = make_participant(
         session_client, _ADMIN,
         tenant_id=tenant,
@@ -523,7 +533,7 @@ def fresh_confirmed_attendance(session_client, tenant):
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-05-01",
+        date_of_service=(today - timedelta(days=12)).isoformat(),
         total_hours=1.0,
     )
     yield att, p
@@ -532,19 +542,21 @@ def fresh_confirmed_attendance(session_client, tenant):
 
 # ── claim_dup_ref_setup ───────────────────────────────────────────────────────
 
-_FIXED_DUP_REF = "MCD-20260301-DUPREF1"
-
-
 @pytest.fixture(scope="function")
 def claim_dup_ref_setup(session_client, tenant, db_session, monkeypatch):
     """
     TC-4.1 fixture.
-    Inserts a claim with _FIXED_DUP_REF directly into the DB, then patches
-    _gen_claim_ref so every POST /claims attempt generates that same value.
-    After 5 collisions the server returns CLAIM_DUPLICATE_REFERENCE (409).
-    Yields (participant, confirmed_attendance, ref_number).
+    Inserts a claim with a fixture-computed reference directly into the DB,
+    then patches _gen_claim_ref so every POST /claims attempt generates that
+    same value.  After 5 collisions the server returns CLAIM_DUPLICATE_REFERENCE
+    (409).  Yields (participant, confirmed_attendance, ref_number).
     """
     import main as _backend_main
+
+    today = datetime.now(timezone.utc).date()
+    fixed_dup_ref = f"MCD-{today.strftime('%Y%m%d')}-DUPREF1"
+    dos_att = (today - timedelta(days=13)).isoformat()
+    dos_insert = (today - timedelta(days=14)).isoformat()
 
     p = make_participant(
         session_client, _ADMIN,
@@ -555,7 +567,7 @@ def claim_dup_ref_setup(session_client, tenant, db_session, monkeypatch):
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-05-03",
+        date_of_service=dos_att,
     )
     # Direct insert: pre-seed a claim that owns the fixed reference number.
     # A placeholder participant_id is used so the composite duplicate check
@@ -567,18 +579,19 @@ def claim_dup_ref_setup(session_client, tenant, db_session, monkeypatch):
             "claim_reference_number, procedure_code, date_of_service_start, "
             "claim_status, version, created_at, updated_at) VALUES "
             "(:cid, :tid, 'placeholder-pid-dup-ref', :aids, 'medicaid', :ref, "
-            "'T2029', '2026-05-04', 'draft', 1, datetime('now'), datetime('now'))"
+            "'T2029', :dos, 'draft', 1, datetime('now'), datetime('now'))"
         ),
         {
             "cid": str(uuid.uuid4()),
             "tid": tenant,
             "aids": json.dumps([]),
-            "ref": _FIXED_DUP_REF,
+            "ref": fixed_dup_ref,
+            "dos": dos_insert,
         },
     )
     db_session.commit()
-    monkeypatch.setattr(_backend_main, "_gen_claim_ref", lambda _pt: _FIXED_DUP_REF)
-    yield p, att, _FIXED_DUP_REF
+    monkeypatch.setattr(_backend_main, "_gen_claim_ref", lambda _pt: fixed_dup_ref)
+    yield p, att, fixed_dup_ref
     _soft_delete(session_client, p["participant_id"])
 
 
@@ -589,10 +602,14 @@ def claim_dup_composite_setup(session_client, tenant):
     """
     TC-4.2 fixture.
     Creates participant P1, confirmed att1 (used in existing claim), an
-    existing claim keyed on (P1, 2026-03-01, T2029, medicaid), and confirmed
-    att2 (used in the duplicate POST attempt).
+    existing claim, and confirmed att2 (used in the duplicate POST attempt).
     Yields (participant, att1, existing_claim, att2).
     """
+    today = datetime.now(timezone.utc).date()
+    dos_att1    = (today - timedelta(days=20)).isoformat()
+    dos_start   = (today - timedelta(days=30)).isoformat()
+    dos_att2    = (today - timedelta(days=21)).isoformat()
+
     p = make_participant(
         session_client, _ADMIN,
         tenant_id=tenant,
@@ -602,14 +619,14 @@ def claim_dup_composite_setup(session_client, tenant):
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-05-05",
+        date_of_service=dos_att1,
     )
     existing_claim = make_claim(
         session_client, _BILLING,
         participant_id=p["participant_id"],
         attendance_ids=[att1["attendance_id"]],
         tenant_id=tenant,
-        date_of_service_start="2026-03-01",
+        date_of_service_start=dos_start,
         procedure_code="T2029",
         payer_type="medicaid",
     )
@@ -617,7 +634,7 @@ def claim_dup_composite_setup(session_client, tenant):
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-05-06",
+        date_of_service=dos_att2,
     )
     yield p, att1, existing_claim, att2
     _soft_delete(session_client, p["participant_id"])
@@ -637,6 +654,12 @@ def attendance_variety_setup(session_client, tenant):
         att_other_tenant : confirmed attendance in TENANT_B
         participant_b    : participant in TENANT_B
     """
+    today = datetime.now(timezone.utc).date()
+    dos_pending   = (today - timedelta(days=40)).isoformat()
+    dos_void      = (today - timedelta(days=41)).isoformat()
+    dos_confirmed = (today - timedelta(days=42)).isoformat()
+    dos_other     = (today - timedelta(days=43)).isoformat()
+
     p = make_participant(
         session_client, _ADMIN,
         tenant_id=tenant,
@@ -646,13 +669,13 @@ def attendance_variety_setup(session_client, tenant):
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-06-01",
+        date_of_service=dos_pending,
     )
     att_to_void = make_attendance(
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-06-02",
+        date_of_service=dos_void,
     )
     r_void = session_client.patch(
         f"/attendance/{att_to_void['attendance_id']}",
@@ -670,7 +693,7 @@ def attendance_variety_setup(session_client, tenant):
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-06-03",
+        date_of_service=dos_confirmed,
         total_hours=1.0,
     )
 
@@ -689,7 +712,7 @@ def attendance_variety_setup(session_client, tenant):
         session_client, _coord_b,
         participant_id=p_b["participant_id"],
         tenant_id=TENANT_B,
-        date_of_service="2026-06-04",
+        date_of_service=dos_other,
         total_hours=1.0,
     )
 
@@ -718,6 +741,7 @@ def three_confirmed_attendances(session_client, tenant):
     Sum = 18.0; server uses this sum as units_billed when creating a claim.
     Yields (participant, att_a, att_b, att_c).
     """
+    today = datetime.now(timezone.utc).date()
     p = make_participant(
         session_client, _ADMIN,
         tenant_id=tenant,
@@ -727,21 +751,21 @@ def three_confirmed_attendances(session_client, tenant):
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-07-01",
+        date_of_service=(today - timedelta(days=50)).isoformat(),
         total_hours=1.0,
     )
     att_b = make_confirmed_attendance(
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-07-02",
+        date_of_service=(today - timedelta(days=51)).isoformat(),
         total_hours=1.5,
     )
     att_c = make_confirmed_attendance(
         session_client, _COORD,
         participant_id=p["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-07-03",
+        date_of_service=(today - timedelta(days=52)).isoformat(),
         total_hours=2.0,
     )
     yield p, att_a, att_b, att_c
@@ -758,6 +782,10 @@ def submitted_and_paid_claims(session_client, tenant):
     claim_paid:      draft → paid via PATCH claim_status="paid" (direct override).
     Yields (claim_submitted, claim_paid, participant_a, participant_b).
     """
+    today = datetime.now(timezone.utc).date()
+    dos_a = (today - timedelta(days=60)).isoformat()
+    dos_b = (today - timedelta(days=61)).isoformat()
+
     p_a = make_participant(
         session_client, _ADMIN,
         tenant_id=tenant,
@@ -767,14 +795,14 @@ def submitted_and_paid_claims(session_client, tenant):
         session_client, _COORD,
         participant_id=p_a["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-08-01",
+        date_of_service=dos_a,
     )
     c_a = make_claim(
         session_client, _BILLING,
         participant_id=p_a["participant_id"],
         attendance_ids=[att_a["attendance_id"]],
         tenant_id=tenant,
-        date_of_service_start="2026-08-01",
+        date_of_service_start=dos_a,
     )
     r_sub = session_client.patch(
         f"/claims/{c_a['claim_id']}",
@@ -793,14 +821,14 @@ def submitted_and_paid_claims(session_client, tenant):
         session_client, _COORD,
         participant_id=p_b["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-08-02",
+        date_of_service=dos_b,
     )
     c_b = make_claim(
         session_client, _BILLING,
         participant_id=p_b["participant_id"],
         attendance_ids=[att_b["attendance_id"]],
         tenant_id=tenant,
-        date_of_service_start="2026-08-02",
+        date_of_service_start=dos_b,
     )
     r_paid = session_client.patch(
         f"/claims/{c_b['claim_id']}",
@@ -825,6 +853,10 @@ def draft_and_submitted_claims(session_client, tenant):
     C_B: draft → submitted (version incremented after submit PATCH).
     Yields (claim_draft, claim_submitted, participant_a, participant_b).
     """
+    today = datetime.now(timezone.utc).date()
+    dos_a = (today - timedelta(days=70)).isoformat()
+    dos_b = (today - timedelta(days=71)).isoformat()
+
     p_a = make_participant(
         session_client, _ADMIN,
         tenant_id=tenant,
@@ -834,14 +866,14 @@ def draft_and_submitted_claims(session_client, tenant):
         session_client, _COORD,
         participant_id=p_a["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-09-01",
+        date_of_service=dos_a,
     )
     c_a = make_claim(
         session_client, _BILLING,
         participant_id=p_a["participant_id"],
         attendance_ids=[att_a["attendance_id"]],
         tenant_id=tenant,
-        date_of_service_start="2026-09-01",
+        date_of_service_start=dos_a,
     )
 
     p_b = make_participant(
@@ -853,14 +885,14 @@ def draft_and_submitted_claims(session_client, tenant):
         session_client, _COORD,
         participant_id=p_b["participant_id"],
         tenant_id=tenant,
-        date_of_service="2026-09-02",
+        date_of_service=dos_b,
     )
     c_b_draft = make_claim(
         session_client, _BILLING,
         participant_id=p_b["participant_id"],
         attendance_ids=[att_b["attendance_id"]],
         tenant_id=tenant,
-        date_of_service_start="2026-09-02",
+        date_of_service_start=dos_b,
     )
     r_sub = session_client.patch(
         f"/claims/{c_b_draft['claim_id']}",

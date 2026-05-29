@@ -4,6 +4,7 @@ test_user.py — 13 tests mapped to TC-2.1 through TC-2.13.
 Regulatory scope: HIPAA · CMS Medicaid/Medicare · State adult day care licensing
 """
 import uuid
+from datetime import datetime, timezone, timedelta
 
 import httpx
 import pytest
@@ -430,12 +431,14 @@ def test_tc_2_12_billing_specialist_create_participant_returns_403(
     client, billing_headers, db_session
 ):
     """TC-2.12 — POST /participants by billing_specialist returns 403; no participant row is created."""
+    today = datetime.now(timezone.utc).date()
+    enrollment_date = (today - timedelta(days=5)).isoformat()
     payload = {
         "tenant_id": TENANT_A,
         "first_name": "Billing",
         "last_name": "Blocked",
         "date_of_birth": "1960-01-01",
-        "enrollment_date": "2026-01-01",
+        "enrollment_date": enrollment_date,
     }
     r = _call(lambda: client.post("/participants", json=payload, headers=billing_headers))
     assert r.status_code == 403
@@ -466,13 +469,15 @@ def test_tc_2_13_nurse_create_claim_returns_403(
         {"pid": pid},
     ).scalar()
 
+    today = datetime.now(timezone.utc).date()
+    dos = (today - timedelta(days=80)).isoformat()
     r = _call(lambda: client.post("/claims", json={
         "tenant_id": TENANT_A,
         "participant_id": pid,
         "attendance_ids": [str(uuid.uuid4())],
         "payer_type": "medicaid",
         "procedure_code": "S5101",
-        "date_of_service_start": "2026-03-01",
+        "date_of_service_start": dos,
     }, headers=nurse_headers))
     assert r.status_code == 403
 

@@ -23,6 +23,7 @@ Design rules (enforced throughout):
 """
 import re
 import uuid
+from datetime import datetime, timezone, timedelta
 
 import httpx
 import pytest
@@ -57,6 +58,8 @@ def test_tc_4_1_duplicate_claim_reference_returns_409(
 ):
     """TC-4.1 — POST /claims whose generated reference collides with an existing
     claim reference returns 409 CLAIM_DUPLICATE_REFERENCE; DB count stays at 1."""
+    today = datetime.now(timezone.utc).date()
+    dos_4_1 = (today - timedelta(days=90)).isoformat()
     p, att, fixed_ref = claim_dup_ref_setup
 
     # Pre-condition: exactly one claim with the fixed reference exists in DB
@@ -77,7 +80,7 @@ def test_tc_4_1_duplicate_claim_reference_returns_409(
         "attendance_ids": [att["attendance_id"]],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-05-03",
+        "date_of_service_start": dos_4_1,
     }, headers=billing_headers))
     assert r.status_code == 409
     assert r.json()["detail"]["error_code"] == "CLAIM_DUPLICATE_REFERENCE"
@@ -104,16 +107,17 @@ def test_tc_4_2_composite_duplicate_returns_409_claim_duplicate(
     existing claim returns 409 CLAIM_DUPLICATE; DB count stays at 1."""
     p, _att1, existing_claim, att2 = claim_dup_composite_setup
     pid = p["participant_id"]
+    dos = existing_claim["date_of_service_start"]
 
     # Pre-condition: exactly one claim for this composite key
     count_before = db_session.execute(
         text(
             "SELECT COUNT(*) FROM claim "
             "WHERE tenant_id = :tid AND participant_id = :pid "
-            "AND date_of_service_start = '2026-03-01' "
+            "AND date_of_service_start = :dos "
             "AND procedure_code = 'T2029' AND payer_type = 'medicaid'"
         ),
-        {"tid": TENANT_A, "pid": pid},
+        {"tid": TENANT_A, "pid": pid, "dos": dos},
     ).scalar()
     assert count_before == 1, (
         f"Pre-condition failed: expected 1 claim with composite key, found {count_before}"
@@ -125,7 +129,7 @@ def test_tc_4_2_composite_duplicate_returns_409_claim_duplicate(
         "attendance_ids": [att2["attendance_id"]],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-03-01",
+        "date_of_service_start": dos,
     }, headers=billing_headers))
     assert r.status_code == 409
     assert r.json()["detail"]["error_code"] == "CLAIM_DUPLICATE"
@@ -135,10 +139,10 @@ def test_tc_4_2_composite_duplicate_returns_409_claim_duplicate(
         text(
             "SELECT COUNT(*) FROM claim "
             "WHERE tenant_id = :tid AND participant_id = :pid "
-            "AND date_of_service_start = '2026-03-01' "
+            "AND date_of_service_start = :dos "
             "AND procedure_code = 'T2029' AND payer_type = 'medicaid'"
         ),
-        {"tid": TENANT_A, "pid": pid},
+        {"tid": TENANT_A, "pid": pid, "dos": dos},
     ).scalar()
     assert count_after == 1, (
         f"Expected count=1 after rejected duplicate POST, found {count_after}"
@@ -158,6 +162,8 @@ def test_tc_4_3_unauthorized_roles_post_claims_returns_403(
 ):
     """TC-4.3 — POST /claims by care_coordinator, nurse_medication_aide, physician,
     and participant_family each return 403 RBAC_DENIED; DB claim count is unchanged."""
+    today = datetime.now(timezone.utc).date()
+    dos_4_3 = (today - timedelta(days=91)).isoformat()
     att, p = fresh_confirmed_attendance
     pid = p["participant_id"]
 
@@ -172,7 +178,7 @@ def test_tc_4_3_unauthorized_roles_post_claims_returns_403(
         "attendance_ids": [att["attendance_id"]],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-05-01",
+        "date_of_service_start": dos_4_3,
     }
 
     unauthorized = [
@@ -279,6 +285,11 @@ def test_tc_4_5_attendance_status_validation_and_confirmed_creates_claim(
     """TC-4.5 — POST /claims referencing pending or voided attendance returns 422
     ATTENDANCE_NOT_CONFIRMED; cross-tenant attendance returns 422 or 404;
     confirmed attendance returns 201 and sets attendance status to billed."""
+    today = datetime.now(timezone.utc).date()
+    dos_4_5_a = (today - timedelta(days=92)).isoformat()
+    dos_4_5_b = (today - timedelta(days=93)).isoformat()
+    dos_4_5_c = (today - timedelta(days=94)).isoformat()
+    dos_4_5_d = (today - timedelta(days=95)).isoformat()
     setup = attendance_variety_setup
     p = setup["participant"]
     pid = p["participant_id"]
@@ -290,7 +301,7 @@ def test_tc_4_5_attendance_status_validation_and_confirmed_creates_claim(
         "attendance_ids": [setup["att_pending"]["attendance_id"]],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-06-01",
+        "date_of_service_start": dos_4_5_a,
     }, headers=billing_headers))
     assert r_pending.status_code == 422
     assert r_pending.json()["detail"]["error_code"] == "ATTENDANCE_NOT_CONFIRMED"
@@ -302,7 +313,7 @@ def test_tc_4_5_attendance_status_validation_and_confirmed_creates_claim(
         "attendance_ids": [setup["att_voided"]["attendance_id"]],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-06-02",
+        "date_of_service_start": dos_4_5_b,
     }, headers=billing_headers))
     assert r_voided.status_code == 422
     assert r_voided.json()["detail"]["error_code"] == "ATTENDANCE_NOT_CONFIRMED"
@@ -314,7 +325,7 @@ def test_tc_4_5_attendance_status_validation_and_confirmed_creates_claim(
         "attendance_ids": [setup["att_other_tenant"]["attendance_id"]],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-06-04",
+        "date_of_service_start": dos_4_5_c,
     }, headers=billing_headers))
     assert r_cross.status_code in (422, 404), (
         f"Expected 422 or 404 for cross-tenant attendance, got {r_cross.status_code}"
@@ -328,7 +339,7 @@ def test_tc_4_5_attendance_status_validation_and_confirmed_creates_claim(
         "attendance_ids": [att_conf_id],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-06-03",
+        "date_of_service_start": dos_4_5_d,
     }, headers=billing_headers))
     assert r_ok.status_code == 201, f"Expected 201 for confirmed attendance, got {r_ok.text}"
     body = r_ok.json()
@@ -360,6 +371,9 @@ def test_tc_4_6_multi_attendance_units_billed_sum_and_not_found(
     calculates units_billed = sum of authorized_units_consumed (4+6+8=18); all
     three attendances become billed; non-existent attendance UUID returns 422
     CLAIM_ATTENDANCE_NOT_FOUND."""
+    today = datetime.now(timezone.utc).date()
+    dos_4_6_a = (today - timedelta(days=96)).isoformat()
+    dos_4_6_b = (today - timedelta(days=97)).isoformat()
     p, att_a, att_b, att_c = three_confirmed_attendances
     pid = p["participant_id"]
     ids = [att_a["attendance_id"], att_b["attendance_id"], att_c["attendance_id"]]
@@ -371,7 +385,7 @@ def test_tc_4_6_multi_attendance_units_billed_sum_and_not_found(
         "attendance_ids": ids,
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-07-01",
+        "date_of_service_start": dos_4_6_a,
     }, headers=billing_headers))
     assert r.status_code == 201, f"Expected 201, got {r.text}"
     body = r.json()
@@ -413,7 +427,7 @@ def test_tc_4_6_multi_attendance_units_billed_sum_and_not_found(
         "attendance_ids": [fake_id],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-07-10",
+        "date_of_service_start": dos_4_6_b,
     }, headers=billing_headers))
     assert r_bad.status_code == 422
     assert r_bad.json()["detail"]["error_code"] == "CLAIM_ATTENDANCE_NOT_FOUND"
@@ -429,6 +443,8 @@ def test_tc_4_7_missing_required_fields_return_400_or_422(
 ):
     """TC-4.7 — POST /claims omitting participant_id, procedure_code, or payer_type
     each return 400 or 422 identifying the missing field; no claims are created."""
+    today = datetime.now(timezone.utc).date()
+    dos_4_7 = (today - timedelta(days=98)).isoformat()
     att, _p = fresh_confirmed_attendance
     att_id = att["attendance_id"]
 
@@ -443,7 +459,7 @@ def test_tc_4_7_missing_required_fields_return_400_or_422(
         "attendance_ids": [att_id],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-05-10",
+        "date_of_service_start": dos_4_7,
     }, headers=billing_headers))
     assert r1.status_code in (400, 422)
     assert "participant_id" in r1.text, (
@@ -456,7 +472,7 @@ def test_tc_4_7_missing_required_fields_return_400_or_422(
         "participant_id": att["attendance_id"],  # placeholder; field validation fires first
         "attendance_ids": [att_id],
         "payer_type": "medicaid",
-        "date_of_service_start": "2026-05-10",
+        "date_of_service_start": dos_4_7,
     }, headers=billing_headers))
     assert r2.status_code in (400, 422)
     assert "procedure_code" in r2.text, (
@@ -469,7 +485,7 @@ def test_tc_4_7_missing_required_fields_return_400_or_422(
         "participant_id": att["attendance_id"],  # placeholder; field validation fires first
         "attendance_ids": [att_id],
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-05-10",
+        "date_of_service_start": dos_4_7,
     }, headers=billing_headers))
     assert r3.status_code in (400, 422)
     assert "payer_type" in r3.text, (
@@ -496,6 +512,8 @@ def test_tc_4_8_phi_write_and_phi_disclose_audit_events_in_db(
     fields and no PHI values; PATCH draft→submitted emits PHI_DISCLOSE with
     data_affected=['claim_status','submission_date','claim_reference_number'].
     All assertions query the audit_log table directly."""
+    today = datetime.now(timezone.utc).date()
+    dos_4_8 = (today - timedelta(days=99)).isoformat()
     att, p = fresh_confirmed_attendance
     att_id = att["attendance_id"]
 
@@ -513,7 +531,7 @@ def test_tc_4_8_phi_write_and_phi_disclose_audit_events_in_db(
         "attendance_ids": [att_id],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-05-01",
+        "date_of_service_start": dos_4_8,
     }, headers=billing_session_headers))
     assert r_create.status_code == 201, f"Claim creation failed: {r_create.text}"
     claim_id = r_create.json()["claim_id"]
@@ -618,6 +636,9 @@ def test_tc_4_9_empty_attendance_ids_and_server_calculated_units_billed(
     """TC-4.9 — POST /claims with empty attendance_ids returns 422
     CLAIM_NO_ATTENDANCE_RECORDS; POST with caller-supplied units_billed=999.0
     is ignored and server stores the value calculated from authorized_units_consumed."""
+    today = datetime.now(timezone.utc).date()
+    dos_4_9_a = (today - timedelta(days=100)).isoformat()
+    dos_4_9_b = (today - timedelta(days=101)).isoformat()
     att, p = fresh_confirmed_attendance
     pid = p["participant_id"]
 
@@ -628,7 +649,7 @@ def test_tc_4_9_empty_attendance_ids_and_server_calculated_units_billed(
         "attendance_ids": [],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-05-15",
+        "date_of_service_start": dos_4_9_a,
     }, headers=billing_headers))
     assert r_empty.status_code == 422
     assert r_empty.json()["detail"]["error_code"] == "CLAIM_NO_ATTENDANCE_RECORDS"
@@ -637,11 +658,11 @@ def test_tc_4_9_empty_attendance_ids_and_server_calculated_units_billed(
     count = db_session.execute(
         text(
             "SELECT COUNT(*) FROM claim "
-            "WHERE tenant_id = :tid AND date_of_service_start = '2026-05-15'"
+            "WHERE tenant_id = :tid AND date_of_service_start = :dos"
         ),
-        {"tid": TENANT_A},
+        {"tid": TENANT_A, "dos": dos_4_9_a},
     ).scalar()
-    assert count == 0, f"No claim should exist on 2026-05-15 after rejected POST, found {count}"
+    assert count == 0, f"No claim should exist on {dos_4_9_a} after rejected POST, found {count}"
 
     # Step 4+5: caller supplies units_billed=999.0 but server must calculate from attendance
     # att was created with total_hours=1.0 → authorized_units_consumed=4.0
@@ -651,7 +672,7 @@ def test_tc_4_9_empty_attendance_ids_and_server_calculated_units_billed(
         "attendance_ids": [att["attendance_id"]],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-05-01",
+        "date_of_service_start": dos_4_9_b,
         "units_billed": 999.0,
     }, headers=billing_headers))
     assert r_units.status_code == 201, f"Expected 201, got {r_units.text}"
@@ -688,13 +709,15 @@ def test_tc_4_10_phase2_fields_return_400_no_claim_created(
         {"tid": TENANT_A},
     ).scalar()
 
+    today = datetime.now(timezone.utc).date()
+    dos_4_10 = (today - timedelta(days=102)).isoformat()
     base_payload = {
         "tenant_id": TENANT_A,
         "participant_id": pid,
         "attendance_ids": [att_id],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-05-20",
+        "date_of_service_start": dos_4_10,
     }
 
     # secondary_payer_id (Phase 2 field) → 400 or 422 (schema-level rejection)
@@ -822,6 +845,8 @@ def test_tc_4_12_cross_tenant_attendance_reference_returns_422_or_404(
     """TC-4.12 — POST /claims referencing an attendance from TENANT_B while the
     caller is authenticated in TENANT_A returns 422 or 404; no claim is created
     in TENANT_A referencing that attendance."""
+    today = datetime.now(timezone.utc).date()
+    dos_4_12 = (today - timedelta(days=103)).isoformat()
     att_other_id = attendance_variety_setup["att_other_tenant"]["attendance_id"]
     p = attendance_variety_setup["participant"]
     pid = p["participant_id"]
@@ -832,7 +857,7 @@ def test_tc_4_12_cross_tenant_attendance_reference_returns_422_or_404(
         "attendance_ids": [att_other_id],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-04-01",
+        "date_of_service_start": dos_4_12,
     }, headers=billing_headers))
     assert r.status_code in (422, 404), (
         f"Expected 422 or 404 for cross-tenant attendance, got {r.status_code}"
@@ -846,12 +871,12 @@ def test_tc_4_12_cross_tenant_attendance_reference_returns_422_or_404(
     count_a = db_session.execute(
         text(
             "SELECT COUNT(*) FROM claim "
-            "WHERE tenant_id = :tid AND date_of_service_start = '2026-04-01'"
+            "WHERE tenant_id = :tid AND date_of_service_start = :dos"
         ),
-        {"tid": TENANT_A},
+        {"tid": TENANT_A, "dos": dos_4_12},
     ).scalar()
     assert count_a == 0, (
-        f"Expected 0 claims in TENANT_A on 2026-04-01 after cross-tenant rejection, found {count_a}"
+        f"Expected 0 claims in TENANT_A on {dos_4_12} after cross-tenant rejection, found {count_a}"
     )
 
     # DB — no claim in any tenant references the cross-tenant attendance
@@ -888,6 +913,8 @@ def test_tc_4_13_billed_attendance_cannot_be_reclaimed(
         f"Attendance must be billed after claim creation, got '{r_att.json()['status']}'"
     )
 
+    today = datetime.now(timezone.utc).date()
+    dos_4_13 = (today - timedelta(days=104)).isoformat()
     # Step 2+3: POST new claim referencing the billed attendance → 422
     r_reclaim = _call(lambda: client.post("/claims", json={
         "tenant_id": TENANT_A,
@@ -895,7 +922,7 @@ def test_tc_4_13_billed_attendance_cannot_be_reclaimed(
         "attendance_ids": [att_id],
         "payer_type": "medicaid",
         "procedure_code": "T2029",
-        "date_of_service_start": "2026-05-01",
+        "date_of_service_start": dos_4_13,
     }, headers=billing_headers))
     assert r_reclaim.status_code == 422
     assert r_reclaim.json()["detail"]["error_code"] == "ATTENDANCE_NOT_CONFIRMED"
@@ -991,9 +1018,10 @@ def test_tc_4_15_paid_claim_fully_immutable(
     assert r2.json()["detail"]["error_code"] == "CLAIM_FIELD_IMMUTABLE"
 
     # Step 4: PATCH submission_date → 422 CLAIM_FIELD_IMMUTABLE
+    past_submission_date = (datetime.now(timezone.utc) - timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
     r3 = _call(lambda: client.patch(
         f"/claims/{c_paid_id}",
-        json={"version": paid_version, "submission_date": "2026-01-01T00:00:00Z"},
+        json={"version": paid_version, "submission_date": past_submission_date},
         headers=billing_headers,
     ))
     assert r3.status_code == 422

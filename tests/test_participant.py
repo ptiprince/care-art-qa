@@ -5,6 +5,7 @@ Regulatory scope: HIPAA · 42 CFR Part 2 · CMS Medicaid/Medicare · State adult
 """
 import httpx
 import pytest
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import text
 
 from helpers import TENANT_A
@@ -35,12 +36,14 @@ def test_tc_1_1_positive_participant_creation_by_program_administrator(
     client, admin_headers, db_session
 ):
     """TC-1.1 — POST /participants by program_administrator returns 201 with all required fields and program_status active."""
+    today = datetime.now(timezone.utc).date()
+    enrollment_date = (today - timedelta(days=1)).isoformat()
     payload = {
         "tenant_id": TENANT_A,
         "first_name": "Claudia",
         "last_name": "Marsh",
         "date_of_birth": "1950-04-12",
-        "enrollment_date": "2026-01-01",
+        "enrollment_date": enrollment_date,
     }
     r = _call(lambda: client.post("/participants", json=payload, headers=admin_headers))
     assert r.status_code == 201
@@ -49,7 +52,7 @@ def test_tc_1_1_positive_participant_creation_by_program_administrator(
     assert body["first_name"] == "Claudia"
     assert body["last_name"] == "Marsh"
     assert body["date_of_birth"] == "1950-04-12"
-    assert body["enrollment_date"] == "2026-01-01"
+    assert body["enrollment_date"] == enrollment_date
     assert body["program_status"] == "active"
 
     # DB layer: verify the row was persisted with correct fields
@@ -115,12 +118,14 @@ def test_tc_1_3_negative_login_wrong_password_returns_401(client, users, db_sess
 def test_tc_1_4_duplicate_medicaid_id_returns_409(client, admin_headers, participants, db_session):
     """TC-1.4 — POST /participants with an already-registered medicaid_id returns 409 PARTICIPANT_DUPLICATE_MEDICAID_ID."""
     existing_medicaid = participants["active"][0]["medicaid_id"]
+    today = datetime.now(timezone.utc).date()
+    enrollment_date = (today - timedelta(days=2)).isoformat()
     payload = {
         "tenant_id": TENANT_A,
         "first_name": "Other",
         "last_name": "Person",
         "date_of_birth": "1960-05-10",
-        "enrollment_date": "2026-01-01",
+        "enrollment_date": enrollment_date,
         "medicaid_id": existing_medicaid,
     }
     r = _call(lambda: client.post("/participants", json=payload, headers=admin_headers))
@@ -178,12 +183,14 @@ def test_tc_1_6_audit_log_phi_operation_mandatory_fields_no_phi_values(
     client, admin_headers, compliance_headers, db_session
 ):
     """TC-1.6 — PHI_WRITE audit event after POST /participants has all 11 mandatory fields and no PHI values in data_affected."""
+    today = datetime.now(timezone.utc).date()
+    enrollment_date = (today - timedelta(days=3)).isoformat()
     payload = {
         "tenant_id": TENANT_A,
         "first_name": "Audra",
         "last_name": "Linden",
         "date_of_birth": "1955-07-19",
-        "enrollment_date": "2026-02-01",
+        "enrollment_date": enrollment_date,
     }
     r = _call(lambda: client.post("/participants", json=payload, headers=admin_headers))
     assert r.status_code == 201
@@ -364,11 +371,13 @@ def test_tc_1_11_missing_first_name_returns_400_with_field_name(
     client, admin_headers, db_session
 ):
     """TC-1.11 — POST /participants without first_name returns 400 or 422 and identifies first_name in the error."""
+    today = datetime.now(timezone.utc).date()
+    enrollment_date = (today - timedelta(days=4)).isoformat()
     payload = {
         "tenant_id": TENANT_A,
         "last_name": "Norris",
         "date_of_birth": "1965-03-22",
-        "enrollment_date": "2026-01-01",
+        "enrollment_date": enrollment_date,
     }
     r = _call(lambda: client.post("/participants", json=payload, headers=admin_headers))
     assert r.status_code in (400, 422)

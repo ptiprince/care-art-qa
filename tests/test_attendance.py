@@ -3,6 +3,8 @@ test_attendance.py — 12 tests mapped to TC-3.1 through TC-3.12.
 
 Regulatory scope: HIPAA · CMS Medicaid/Medicare · State adult day care licensing
 """
+from datetime import datetime, timezone, timedelta
+
 import httpx
 import pytest
 from sqlalchemy import text
@@ -35,17 +37,19 @@ def test_tc_3_1_positive_attendance_creation_by_program_administrator(
     client, admin_headers, participants, db_session
 ):
     """TC-3.1 — POST /attendance by program_administrator returns 201 with status pending."""
+    today = datetime.now(timezone.utc).date()
+    dos_3_1 = (today - timedelta(days=81)).isoformat()
     pid = participants["active"][0]["participant_id"]
     r = _call(lambda: client.post("/attendance", json={
         "tenant_id": TENANT_A,
         "participant_id": pid,
-        "date_of_service": "2026-04-01",
+        "date_of_service": dos_3_1,
     }, headers=admin_headers))
     assert r.status_code == 201
     body = r.json()
     assert body["attendance_id"] is not None
     assert body["participant_id"] == pid
-    assert body["date_of_service"] == "2026-04-01"
+    assert body["date_of_service"] == dos_3_1
     assert body["status"] == "pending"
     assert body["version"] is not None
 
@@ -60,7 +64,7 @@ def test_tc_3_1_positive_attendance_creation_by_program_administrator(
     ).fetchone()
     assert row is not None, f"Attendance {att_id} not found in DB after creation"
     assert row.participant_id == pid
-    assert str(row.date_of_service) == "2026-04-01"
+    assert str(row.date_of_service) == dos_3_1
     assert row.status == "pending"
 
 
@@ -70,11 +74,13 @@ def test_tc_3_2_positive_attendance_creation_by_care_coordinator(
     client, coordinator_headers, participants, db_session
 ):
     """TC-3.2 — POST /attendance by care_coordinator returns 201 with status pending."""
+    today = datetime.now(timezone.utc).date()
+    dos_3_2 = (today - timedelta(days=82)).isoformat()
     pid = participants["active"][1]["participant_id"]
     r = _call(lambda: client.post("/attendance", json={
         "tenant_id": TENANT_A,
         "participant_id": pid,
-        "date_of_service": "2026-04-02",
+        "date_of_service": dos_3_2,
     }, headers=coordinator_headers))
     assert r.status_code == 201
     body = r.json()
@@ -113,12 +119,14 @@ def test_tc_3_3_missing_date_of_service_returns_400(
     )
 
     # DB layer: no attendance must exist for this participant on the sentinel date
+    today = datetime.now(timezone.utc).date()
+    dos_3_3 = (today - timedelta(days=83)).isoformat()
     count = db_session.execute(
         text(
             "SELECT COUNT(*) FROM attendance "
-            "WHERE participant_id = :pid AND date_of_service = '2026-03-30'"
+            "WHERE participant_id = :pid AND date_of_service = :dos"
         ),
-        {"pid": pid},
+        {"pid": pid, "dos": dos_3_3},
     ).scalar()
     assert count == 0, (
         "No attendance should exist after a failed creation missing date_of_service"
@@ -131,10 +139,12 @@ def test_tc_3_4_missing_participant_id_returns_400(
     client, coordinator_headers, db_session
 ):
     """TC-3.4 — POST /attendance without participant_id returns 400 or 422 identifying the field."""
+    today = datetime.now(timezone.utc).date()
+    dos_3_4 = (today - timedelta(days=84)).isoformat()
     r = _call(lambda: client.post("/attendance", json={
         "tenant_id": TENANT_A,
         # participant_id deliberately omitted
-        "date_of_service": "2026-03-31",
+        "date_of_service": dos_3_4,
     }, headers=coordinator_headers))
     assert r.status_code in (400, 422)
     assert "participant_id" in r.text, (
@@ -145,12 +155,12 @@ def test_tc_3_4_missing_participant_id_returns_400(
     count = db_session.execute(
         text(
             "SELECT COUNT(*) FROM attendance "
-            "WHERE date_of_service = '2026-03-31' AND tenant_id = :tid"
+            "WHERE date_of_service = :dos AND tenant_id = :tid"
         ),
-        {"tid": TENANT_A},
+        {"dos": dos_3_4, "tid": TENANT_A},
     ).scalar()
     assert count == 0, (
-        "No attendance should exist on 2026-03-31 after a failed creation missing participant_id"
+        f"No attendance should exist on {dos_3_4} after a failed creation missing participant_id"
     )
 
 
@@ -160,19 +170,21 @@ def test_tc_3_5_duplicate_participant_date_returns_409(
     client, admin_headers, fresh_participant, db_session
 ):
     """TC-3.5 — POST /attendance for the same participant_id and date_of_service returns 409 ATTENDANCE_DUPLICATE_DATE."""
+    today = datetime.now(timezone.utc).date()
+    dos_3_5 = (today - timedelta(days=85)).isoformat()
     pid = fresh_participant["participant_id"]
 
     r1 = _call(lambda: client.post("/attendance", json={
         "tenant_id": TENANT_A,
         "participant_id": pid,
-        "date_of_service": "2026-04-05",
+        "date_of_service": dos_3_5,
     }, headers=admin_headers))
     assert r1.status_code == 201, f"First attendance creation failed: {r1.text}"
 
     r2 = _call(lambda: client.post("/attendance", json={
         "tenant_id": TENANT_A,
         "participant_id": pid,
-        "date_of_service": "2026-04-05",
+        "date_of_service": dos_3_5,
     }, headers=admin_headers))
     assert r2.status_code == 409
     assert r2.json()["detail"]["error_code"] == "ATTENDANCE_DUPLICATE_DATE"
@@ -181,12 +193,12 @@ def test_tc_3_5_duplicate_participant_date_returns_409(
     count = db_session.execute(
         text(
             "SELECT COUNT(*) FROM attendance "
-            "WHERE participant_id = :pid AND date_of_service = '2026-04-05'"
+            "WHERE participant_id = :pid AND date_of_service = :dos"
         ),
-        {"pid": pid},
+        {"pid": pid, "dos": dos_3_5},
     ).scalar()
     assert count == 1, (
-        f"Expected exactly 1 attendance for participant {pid} on 2026-04-05, found {count}"
+        f"Expected exactly 1 attendance for participant {pid} on {dos_3_5}, found {count}"
     )
 
 
@@ -298,11 +310,14 @@ def test_tc_3_9_billing_units_total_hours_to_authorized_units_consumed(
     """TC-3.9 — total_hours is converted server-side to authorized_units_consumed at Medicaid rate (1 h = 4 units)."""
     pid = participants["active"][2]["participant_id"]
 
+    today = datetime.now(timezone.utc).date()
+    dos_3_9_a = (today - timedelta(days=86)).isoformat()
+    dos_3_9_b = (today - timedelta(days=87)).isoformat()
     # 6 hours × 4 units/hour = 24 units
     r1 = _call(lambda: client.post("/attendance", json={
         "tenant_id": TENANT_A,
         "participant_id": pid,
-        "date_of_service": "2026-04-09",
+        "date_of_service": dos_3_9_a,
         "total_hours": 6.0,
     }, headers=admin_headers))
     assert r1.status_code == 201, f"Attendance creation failed: {r1.text}"
@@ -328,7 +343,7 @@ def test_tc_3_9_billing_units_total_hours_to_authorized_units_consumed(
     r2 = _call(lambda: client.post("/attendance", json={
         "tenant_id": TENANT_A,
         "participant_id": pid,
-        "date_of_service": "2026-04-10",
+        "date_of_service": dos_3_9_b,
         "total_hours": 8.0,
     }, headers=admin_headers))
     assert r2.status_code == 201, f"Second attendance creation failed: {r2.text}"
@@ -396,10 +411,12 @@ def test_tc_3_11_audit_log_on_creation_has_mandatory_fields_no_phi(
     """TC-3.11 — PHI_WRITE audit event after POST /attendance has all 11 mandatory fields and no PHI values in data_affected."""
     pid = participants["active"][3]["participant_id"]
 
+    today = datetime.now(timezone.utc).date()
+    dos_3_11 = (today - timedelta(days=88)).isoformat()
     r = _call(lambda: client.post("/attendance", json={
         "tenant_id": TENANT_A,
         "participant_id": pid,
-        "date_of_service": "2026-04-11",
+        "date_of_service": dos_3_11,
     }, headers=admin_headers))
     assert r.status_code == 201
     att_id = r.json()["attendance_id"]
@@ -476,10 +493,12 @@ def test_tc_3_12_billing_specialist_create_attendance_returns_403(
         {"pid": pid},
     ).scalar()
 
+    today = datetime.now(timezone.utc).date()
+    dos_3_12 = (today - timedelta(days=89)).isoformat()
     r = _call(lambda: client.post("/attendance", json={
         "tenant_id": TENANT_A,
         "participant_id": pid,
-        "date_of_service": "2026-04-12",
+        "date_of_service": dos_3_12,
     }, headers=billing_headers))
     assert r.status_code == 403
 
