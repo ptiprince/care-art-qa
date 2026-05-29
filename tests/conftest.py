@@ -905,3 +905,354 @@ def draft_and_submitted_claims(session_client, tenant):
     yield c_a, c_b, p_a, p_b
     _soft_delete(session_client, p_a["participant_id"])
     _soft_delete(session_client, p_b["participant_id"])
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# MAR RECORD TEST FIXTURES (TC-5.x)
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── mar_write_setup ───────────────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def mar_write_setup(session_client, tenant):
+    """
+    TC-5.2, TC-5.3, TC-5.5, TC-5.7–TC-5.13 fixture.
+    Yields (participant, nurse_user) for tests that create or attempt to create
+    MAR records.  No MAR is pre-seeded.
+    """
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    nurse_user = make_nurse_user(session_client, _ADMIN, tenant_id=tenant)
+    yield p, nurse_user
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── mar_dup_setup ─────────────────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def mar_dup_setup(session_client, tenant):
+    """
+    TC-5.1 fixture.
+    Pre-seeds one administered MAR.  Test attempts a duplicate POST to the same
+    (participant, medication, scheduled_time) tuple.
+    Yields (participant, nurse_user, first_mar).
+    """
+    now = datetime.now(timezone.utc)
+    scheduled = (now - timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%S")
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    nurse_user = make_nurse_user(session_client, _ADMIN, tenant_id=tenant)
+    first_mar = make_mar_record(
+        session_client, _NURSE,
+        participant_id=p["participant_id"],
+        administered_by=nurse_user["user_id"],
+        tenant_id=tenant,
+        scheduled_time=scheduled,
+        medication_name="Lisinopril 10mg",
+        status="administered",
+    )
+    yield p, nurse_user, first_mar
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── controlled_substance_mar_setup ────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def controlled_substance_mar_setup(session_client, tenant):
+    """
+    TC-5.4, TC-5.6 fixture.
+    Pre-seeds one controlled-substance administered MAR.
+    Yields (participant, nurse_user, cs_mar).
+    """
+    now = datetime.now(timezone.utc)
+    scheduled = (now - timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%S")
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    nurse_user = make_nurse_user(session_client, _ADMIN, tenant_id=tenant)
+    cs_mar = make_mar_record(
+        session_client, _NURSE,
+        participant_id=p["participant_id"],
+        administered_by=nurse_user["user_id"],
+        tenant_id=tenant,
+        scheduled_time=scheduled,
+        medication_name="Oxycodone 5mg",
+        is_controlled_substance=True,
+        status="administered",
+    )
+    yield p, nurse_user, cs_mar
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── fresh_missed_mar ──────────────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def fresh_missed_mar(session_client, tenant):
+    """
+    TC-5.16–TC-5.20 fixture.
+    Pre-seeds one missed MAR with notes.
+    Yields (mar, nurse_user, participant).
+    """
+    now = datetime.now(timezone.utc)
+    scheduled = (now - timedelta(hours=5)).strftime("%Y-%m-%dT%H:%M:%S")
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    nurse_user = make_nurse_user(session_client, _ADMIN, tenant_id=tenant)
+    mar = make_mar_record(
+        session_client, _NURSE,
+        participant_id=p["participant_id"],
+        administered_by=nurse_user["user_id"],
+        tenant_id=tenant,
+        scheduled_time=scheduled,
+        medication_name="Metformin 500mg",
+        status="missed",
+        notes="Patient refused medication at scheduled time.",
+    )
+    yield mar, nurse_user, p
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── mar_version_conflict_setup ────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def mar_version_conflict_setup(session_client, tenant):
+    """
+    TC-5.21 fixture.
+    Creates a missed MAR then PATCHes it once to produce version=2.
+    Yields (mar_v2, nurse_user, participant).  Test uses mar_v2["version"]-1 as
+    the stale version to trigger MAR_VERSION_CONFLICT.
+    """
+    now = datetime.now(timezone.utc)
+    scheduled = (now - timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%S")
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    nurse_user = make_nurse_user(session_client, _ADMIN, tenant_id=tenant)
+    mar = make_mar_record(
+        session_client, _NURSE,
+        participant_id=p["participant_id"],
+        administered_by=nurse_user["user_id"],
+        tenant_id=tenant,
+        scheduled_time=scheduled,
+        medication_name="Lisinopril 5mg",
+        status="missed",
+        notes="Initial missed dose documentation.",
+    )
+    r_patch = session_client.patch(
+        f"/mar-records/{mar['mar_id']}",
+        json={"version": mar["version"], "notes": "Updated missed dose documentation."},
+        headers=_NURSE,
+    )
+    assert r_patch.status_code == 200, f"mar_version_conflict_setup PATCH failed: {r_patch.text}"
+    mar_v2 = r_patch.json()
+    yield mar_v2, nurse_user, p
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# INCIDENT TEST FIXTURES (TC-6.x)
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── fresh_incident_sud ────────────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def fresh_incident_sud(session_client, tenant):
+    """
+    TC-6.4, TC-6.5, TC-6.7 fixture.
+    Pre-seeds a SUD-related minor draft incident.
+    Yields (incident, participant).
+    """
+    today = datetime.now(timezone.utc).date()
+    incident_date = (today - timedelta(days=110)).isoformat()
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+        is_sud_record=True,
+    )
+    inc = make_incident(
+        session_client, _ADMIN,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        severity="minor",
+        is_sud_related=True,
+        incident_date=incident_date,
+    )
+    yield inc, p
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── fresh_incident_escalated ──────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def fresh_incident_escalated(session_client, tenant):
+    """
+    TC-6.9, TC-6.13 fixture.
+    Creates a severe incident that is auto-escalated on creation.
+    Yields (incident, participant).
+    """
+    today = datetime.now(timezone.utc).date()
+    incident_date = (today - timedelta(days=111)).isoformat()
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    inc = make_incident(
+        session_client, _ADMIN,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        severity="severe",
+        incident_date=incident_date,
+    )
+    yield inc, p
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── overdue_escalated_incident_setup ─────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def overdue_escalated_incident_setup(session_client, tenant, db_session):
+    """
+    TC-6.10 fixture.
+    Creates a severe (auto-escalated) incident, then backdates created_at to
+    21 h ago so the /jobs/escalated-incidents-alert endpoint includes it.
+    Yields (incident, participant).
+    """
+    today = datetime.now(timezone.utc).date()
+    incident_date = (today - timedelta(days=112)).isoformat()
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    inc = make_incident(
+        session_client, _ADMIN,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        severity="severe",
+        incident_date=incident_date,
+    )
+    overdue_ts = (datetime.now(timezone.utc) - timedelta(hours=21)).strftime("%Y-%m-%d %H:%M:%S")
+    db_session.execute(
+        text("UPDATE incident SET created_at = :ts WHERE incident_id = :iid"),
+        {"ts": overdue_ts, "iid": inc["incident_id"]},
+    )
+    db_session.commit()
+    yield inc, p
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── fresh_incident_open ───────────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def fresh_incident_open(session_client, tenant):
+    """
+    TC-6.11 fixture.
+    Pre-seeds a draft (open) minor incident.
+    Yields (incident, participant).
+    """
+    today = datetime.now(timezone.utc).date()
+    incident_date = (today - timedelta(days=113)).isoformat()
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    inc = make_incident(
+        session_client, _ADMIN,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        severity="minor",
+        incident_date=incident_date,
+    )
+    yield inc, p
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── fresh_incident_closed ─────────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def fresh_incident_closed(session_client, tenant):
+    """
+    TC-6.8, TC-6.12, TC-6.15 fixture.
+    Creates a draft incident then PATCHes it to closed (version=2).
+    Yields (closed_incident, participant).
+    """
+    today = datetime.now(timezone.utc).date()
+    incident_date = (today - timedelta(days=114)).isoformat()
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    inc = make_incident(
+        session_client, _ADMIN,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        severity="minor",
+        incident_date=incident_date,
+    )
+    r_close = session_client.patch(
+        f"/incidents/{inc['incident_id']}",
+        json={"version": inc["version"], "status": "closed"},
+        headers=_ADMIN,
+    )
+    assert r_close.status_code == 200, f"fresh_incident_closed PATCH failed: {r_close.text}"
+    closed_inc = r_close.json()
+    yield closed_inc, p
+    _soft_delete(session_client, p["participant_id"])
+
+
+# ── incident_version3_setup ───────────────────────────────────────────────────
+
+@pytest.fixture(scope="function")
+def incident_version3_setup(session_client, tenant):
+    """
+    TC-6.14 fixture.
+    Creates a draft incident and PATCHes it twice to reach version=3.
+    Yields (incident_v3, participant).
+    """
+    today = datetime.now(timezone.utc).date()
+    incident_date = (today - timedelta(days=115)).isoformat()
+    p = make_participant(
+        session_client, _ADMIN,
+        tenant_id=tenant,
+        medicaid_id=_unique_medicaid(),
+    )
+    inc = make_incident(
+        session_client, _ADMIN,
+        participant_id=p["participant_id"],
+        tenant_id=tenant,
+        severity="minor",
+        incident_date=incident_date,
+    )
+    r1 = session_client.patch(
+        f"/incidents/{inc['incident_id']}",
+        json={"version": inc["version"], "location": "Day room"},
+        headers=_ADMIN,
+    )
+    assert r1.status_code == 200, f"incident_version3_setup PATCH 1 failed: {r1.text}"
+    inc_v2 = r1.json()
+    r2 = session_client.patch(
+        f"/incidents/{inc['incident_id']}",
+        json={"version": inc_v2["version"], "location": "Hallway"},
+        headers=_ADMIN,
+    )
+    assert r2.status_code == 200, f"incident_version3_setup PATCH 2 failed: {r2.text}"
+    inc_v3 = r2.json()
+    yield inc_v3, p
+    _soft_delete(session_client, p["participant_id"])

@@ -5,7 +5,7 @@ Full QA infrastructure built from scratch for a HIPAA, 42 CFR Part 2, CMS, ISO 1
 ## Documents
 
 - [Requirements Phase 1](https://docs.google.com/spreadsheets/d/1zMsnvdmbzKZpY19QxgiGqnPbk7Alo9Xa/edit?usp=sharing) — 58 requirements grouped by entity with regulatory references.
-- [Test Cases Phase 1](https://docs.google.com/spreadsheets/d/1HuP2iepdNYn6vyK10z0e3II3Ec6f5DgR/edit?usp=sharing&ouid=106805557209921495723&rtpof=true&sd=true) — test cases for Participant, User, Attendance, and Claim entity groups.
+- [Test Cases Phase 1](https://docs.google.com/spreadsheets/d/1-6Tm037Fxow9B7N4-PNgTVY7ex7XfDwR/edit?usp=sharing&ouid=106805557209921495723&rtpof=true&sd=true) — test cases for Participant, User, Attendance, Claim, MARRecord, and Incident entity groups.
 - [Test Strategy Phase 1](https://docs.google.com/document/d/1cffLTEYunaSdMJdLkN16xwPz5mW87flu/edit?usp=sharing) — risk-based strategy, fixture layer design, CI gate.
 - [Test Plan Phase 1](https://docs.google.com/document/d/17dquqNgr0keI6PMf_dw51UScxh6K9yvM/edit?usp=sharing) — 93 atomic test functions mapped to REQ_IDs.
 - [architecture.md](architecture.md)

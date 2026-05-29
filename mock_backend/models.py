@@ -99,6 +99,7 @@ class IncidentTypeEnum(str, PyEnum):
     behavioral = "behavioral"
     medical_emergency = "medical_emergency"
     other = "other"
+    addendum = "addendum"
 
 class SeverityEnum(str, PyEnum):
     minor = "minor"
@@ -292,6 +293,8 @@ class MARRecord(Base):
     status = Column(String(20), default="administered", nullable=False)
     notes = Column(String(1000))
     is_controlled_substance = Column(Boolean, default=False, nullable=False)
+    is_correction = Column(Boolean, default=False, nullable=False)
+    original_mar_id = Column(String(36), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     created_by = Column(String(36))
@@ -316,6 +319,7 @@ class Incident(Base):
     status = Column(String(20), default="draft", nullable=False)
     regulatory_submission_date = Column(Date)
     is_sud_related = Column(Boolean, default=False, nullable=False)
+    original_incident_id = Column(String(36), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     created_by = Column(String(36))
@@ -580,6 +584,8 @@ class MARRecordCreate(BaseModel):
     status: MARStatusEnum = MARStatusEnum.administered
     notes: Optional[str] = None
     is_controlled_substance: bool = False
+    is_correction: bool = False
+    original_mar_id: Optional[str] = None
     created_by: Optional[str] = None
 
 
@@ -596,6 +602,8 @@ class MARRecordResponse(_ORM):
     status: str
     notes: Optional[str] = None
     is_controlled_substance: bool
+    is_correction: bool
+    original_mar_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     created_by: Optional[str] = None
@@ -618,6 +626,7 @@ class IncidentCreate(BaseModel):
     status: IncidentStatusEnum = IncidentStatusEnum.draft
     regulatory_submission_date: Optional[date] = None
     is_sud_related: bool = False
+    original_incident_id: Optional[str] = None
     created_by: Optional[str] = None
 
 
@@ -635,6 +644,7 @@ class IncidentResponse(_ORM):
     status: str
     regulatory_submission_date: Optional[date] = None
     is_sud_related: bool
+    original_incident_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     created_by: Optional[str] = None

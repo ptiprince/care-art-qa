@@ -986,12 +986,28 @@ def create_mar_record(body: MARRecordCreate, request: Request, db: Session = Dep
 
     # Administered time bounds
     if body.administered_time is not None:
-        now = datetime.now(timezone.utc)
-        if body.administered_time > now:
+        now_naive = datetime.utcnow()
+        adm = body.administered_time
+        if adm.tzinfo is not None:
+            adm = adm.astimezone(timezone.utc).replace(tzinfo=None)
+        sched = body.scheduled_time
+        if sched.tzinfo is not None:
+            sched = sched.astimezone(timezone.utc).replace(tzinfo=None)
+        if adm > now_naive:
             _422("ADMIN_TIME_FUTURE", "administered_time cannot be in the future.")
-        early_cutoff = body.scheduled_time - timedelta(hours=2)
-        if body.administered_time < early_cutoff:
+        early_cutoff = sched - timedelta(hours=2)
+        if adm < early_cutoff:
             _422("ADMIN_TIME_TOO_EARLY", "administered_time is more than 2 hours before scheduled_time.")
+
+    # Correction validation
+    if body.is_correction:
+        if not body.original_mar_id:
+            _422("MAR_CORRECTION_MISSING_ORIGINAL", "original_mar_id is required when is_correction=True.")
+        if not body.notes or len(body.notes) < 20:
+            _422("MAR_CORRECTION_NOTES_TOO_SHORT", "notes must be at least 20 characters when is_correction=True.")
+        original = db.query(MARRecord).filter(MARRecord.mar_id == body.original_mar_id).first()
+        if not original:
+            _422("MAR_CORRECTION_ORIGINAL_NOT_FOUND", f"original_mar_id {body.original_mar_id} not found.")
 
     now = datetime.now(timezone.utc)
     row = MARRecord(
@@ -1034,7 +1050,7 @@ def get_mar_record(mar_id: str, request: Request, db: Session = Depends(get_db))
         if caller["role"] not in priv:
             _emit_audit(
                 db, caller["user_id"], row.tenant_id, caller["session_id"],
-                "PHI_READ", "MARRecord", row.mar_id,
+                "ACCESS_DENIED", "MARRecord", row.mar_id,
                 ["is_controlled_substance"],
                 caller["source_ip"], "DENIED",
             )
@@ -1158,7 +1174,7 @@ def get_incident(incident_id: str, request: Request, db: Session = Depends(get_d
     if caller["role"] in ("physician", "participant_family"):
         _emit_audit(
             db, caller["user_id"], caller["tenant_id"], caller["session_id"],
-            "PHI_READ", "Incident", incident_id,
+            "ACCESS_DENIED", "Incident", incident_id,
             ["incident_id"],
             caller["source_ip"], "DENIED",
         )
@@ -1178,7 +1194,7 @@ def get_incident(incident_id: str, request: Request, db: Session = Depends(get_d
         if caller["role"] not in priv:
             _emit_audit(
                 db, caller["user_id"], row.tenant_id, caller["session_id"],
-                "PHI_READ", "Incident", row.incident_id,
+                "ACCESS_DENIED", "Incident", row.incident_id,
                 ["is_sud_related"],
                 caller["source_ip"], "DENIED",
             )
@@ -1308,7 +1324,7 @@ def list_audit_logs(
 
 @app.get("/jobs/escalated-incidents-alert", tags=["jobs"])
 def alert_escalated_incidents_approaching_deadline(db: Session = Depends(get_db)):
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=20)
+    cutoff = datetime.utcnow() - timedelta(hours=20)
     incidents = db.query(Incident).filter(
         Incident.status == "escalated",
         Incident.regulatory_submission_date.is_(None),
@@ -1318,7 +1334,7 @@ def alert_escalated_incidents_approaching_deadline(db: Session = Depends(get_db)
     for inc in incidents:
         _emit_audit(
             db, "system", inc.tenant_id, "sess_job",
-            "PHI_WRITE", "Incident", inc.incident_id,
+            "ESCALATION_ALERT", "Incident", inc.incident_id,
             ["status", "regulatory_submission_date"],
             "127.0.0.1", "SUCCESS",
         )
