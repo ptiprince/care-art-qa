@@ -1,0 +1,66 @@
+name: Care Art CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * *"
+
+jobs:
+  gate:
+    name: P1 Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install pytest pytest-asyncio anyio httpx fastapi sqlalchemy
+      - name: Run P1 gate tests
+        run: |
+          python3 -m pytest \
+            tests/test_participant.py::test_tc_1_1_positive_participant_creation_by_program_administrator \
+            tests/test_participant.py::test_tc_1_4_duplicate_medicaid_id_returns_409 \
+            tests/test_participant.py::test_tc_1_5_sud_record_billing_specialist_returns_403_no_disclosure \
+            tests/test_participant.py::test_tc_1_9_soft_delete_returns_200_is_deleted_true \
+            tests/test_user.py::test_tc_2_1_positive_user_creation_by_program_administrator \
+            tests/test_user.py::test_tc_2_2_user_creation_by_unauthorized_role_returns_403 \
+            tests/test_user.py::test_tc_2_4_login_wrong_password_returns_401_no_credential_disclosure \
+            tests/test_user.py::test_tc_2_7_account_lockout_after_5_failed_logins \
+            tests/test_attendance.py::test_tc_3_1_positive_attendance_creation_by_program_administrator \
+            tests/test_attendance.py::test_tc_3_5_duplicate_participant_date_returns_409 \
+            tests/test_attendance.py::test_tc_3_2_positive_attendance_creation_by_care_coordinator \
+            tests/test_claim.py::test_tc_4_1_duplicate_claim_reference_returns_409 \
+            tests/test_claim.py::test_tc_4_2_composite_duplicate_returns_409_claim_duplicate \
+            tests/test_claim.py::test_tc_4_3_unauthorized_roles_post_claims_returns_403 \
+            tests/test_claim.py::test_tc_4_5_attendance_status_validation_and_confirmed_creates_claim \
+            tests/test_claim.py::test_tc_4_8_phi_write_and_phi_disclose_audit_events_in_db \
+            tests/test_mar_record.py::test_tc_5_1_duplicate_mar_event_returns_409 \
+            tests/test_mar_record.py::test_tc_5_2_successful_mar_creation_audit_trail \
+            tests/test_mar_record.py::test_tc_5_3_billing_specialist_cannot_create_mar \
+            tests/test_mar_record.py::test_tc_5_4_controlled_substance_read_denied_for_non_privileged_role \
+            tests/test_mar_record.py::test_tc_5_5_administered_status_requires_administered_time \
+            tests/test_incident.py::test_tc_6_1_successful_incident_creation_audit_trail \
+            tests/test_incident.py::test_tc_6_2_admin_and_coordinator_can_create_incident \
+            tests/test_incident.py::test_tc_6_3_physician_cannot_create_incident \
+            tests/test_incident.py::test_tc_6_5_billing_specialist_read_sud_incident_denied_with_audit \
+            tests/test_incident.py::test_tc_6_8_closed_incident_is_immutable \
+            tests/db/test_schema.py \
+            -v
+
+  nightly:
+    name: Full Suite
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install pytest pytest-asyncio anyio httpx fastapi sqlalchemy
+      - name: Run full suite
+        run: python3 -m pytest tests/ -v
