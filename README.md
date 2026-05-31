@@ -21,7 +21,10 @@ Full QA infrastructure built from scratch for a HIPAA, 42 CFR Part 2, CMS, ISO 1
 | tests/test_user.py | passing | 13 |
 | tests/test_attendance.py | passing | 12 |
 | tests/test_claim.py | passing | 15 |
-| **Total** | | **52** |
+| tests/test_mar_record.py | passing | 21 |
+| tests/test_incident.py | passing | 15 |
+| db/test_schema.py | passing | 8 |
+| **Total** | | **96** |
 
 ## Stack
 

@@ -21,8 +21,8 @@ The mock backend is the sole target. Tests run against a local SQLite database s
 | User | 3.2 | HIPAA Workforce §164.308(a)(3) | 13 |
 | Attendance | 3.3 | HIPAA - CMS billing integrity | 12 |
 | Claim | 3.4 | HIPAA - CMS Medicaid/Medicare - EDI X12 | 15 |
-| MARRecord | 3.5 | HIPAA - 42 CFR Part 2 (via is_controlled_substance) | 10 |
-| Incident | 3.6 | HIPAA - State licensing - 42 CFR Part 2 (via is_sud_related) | 8 |
+| MARRecord | 3.5 | HIPAA - 42 CFR Part 2 (via is_controlled_substance) | 21 |
+| Incident | 3.6 | HIPAA - State licensing - 42 CFR Part 2 (via is_sud_related) | 15 |
 
 ### 1.3 Out of Scope for Phase 1
 
@@ -448,32 +448,50 @@ def test_tc_4_14_get_nonexistent_claim_returns_404
 def test_tc_4_15_paid_claim_fully_immutable
 ```
 
-**test_mar_record.py** - 10 functions (REQ_IDs 5.1 - 5.10)
+**test_mar_record.py** - 21 functions (TC-5.1 - TC-5.21)
 
 ```
-def test_5_1_unique_mar_per_participant_medication_and_scheduled_time
-def test_5_2_rbac_write_restricted_to_nurse_medication_aide
-def test_5_3_42cfr_part2_controlled_substance_access_gate
-def test_5_4_audit_log_on_controlled_substance_read_and_write
-def test_5_5_status_field_rules_administered_refused_held_missed
-def test_5_6_administered_time_required_and_within_bounds
-def test_5_7_route_must_be_oral_injection_or_topical
-def test_5_8_administered_record_is_immutable
-def test_5_9_correction_record_references_original_mar_id
-def test_5_10_optimistic_locking_version_conflict_returns_409
+def test_tc_5_1_duplicate_mar_event_returns_409
+def test_tc_5_2_successful_mar_creation_audit_trail
+def test_tc_5_3_billing_specialist_cannot_create_mar
+def test_tc_5_4_controlled_substance_read_denied_for_non_privileged_role
+def test_tc_5_5_administered_status_requires_administered_time
+def test_tc_5_6_controlled_substance_read_allowed_for_privileged_role
+def test_tc_5_7_refused_status_requires_notes
+def test_tc_5_8_held_status_requires_notes
+def test_tc_5_9_future_administered_time_rejected
+def test_tc_5_10_administered_time_too_early_rejected
+def test_tc_5_11_administered_by_must_be_nurse_role
+def test_tc_5_12_administered_by_user_not_found_rejected
+def test_tc_5_13_coordinator_cannot_create_mar
+def test_tc_5_14_administered_mar_is_immutable
+def test_tc_5_15_administered_mar_immutable_check_fires_before_version_check
+def test_tc_5_16_patch_notes_on_missed_mar_succeeds
+def test_tc_5_17_correction_mar_requires_original_mar_id
+def test_tc_5_18_correction_mar_requires_notes_min_20_chars
+def test_tc_5_19_correction_mar_with_valid_fields_succeeds
+def test_tc_5_20_patch_missed_mar_status_transition_succeeds
+def test_tc_5_21_stale_version_on_missed_mar_returns_version_conflict
 ```
 
-**test_incident.py** - 8 functions (REQ_IDs 6.1 - 6.8)
+**test_incident.py** - 15 functions (TC-6.1 - TC-6.15)
 
 ```
-def test_6_1_incident_id_is_sole_unique_constraint_no_composite_key
-def test_6_2_rbac_staff_can_create_external_roles_denied
-def test_6_3_42cfr_part2_sud_related_incident_access_gate
-def test_6_4_audit_log_on_sud_related_incident_read_and_write
-def test_6_5_state_machine_auto_escalates_severe_and_medical_emergency
-def test_6_6_alert_raised_when_escalated_incident_approaches_24_hour_deadline
-def test_6_7_closed_incident_is_immutable
-def test_6_8_optimistic_locking_version_conflict_returns_409
+def test_tc_6_1_successful_incident_creation_audit_trail
+def test_tc_6_2_admin_and_coordinator_can_create_incident
+def test_tc_6_3_physician_cannot_create_incident
+def test_tc_6_4_physician_cannot_read_any_incident
+def test_tc_6_5_billing_specialist_read_sud_incident_denied_with_audit
+def test_tc_6_6_medical_emergency_incident_auto_escalates
+def test_tc_6_7_coordinator_can_read_sud_incident
+def test_tc_6_8_closed_incident_is_immutable
+def test_tc_6_9_severe_incident_auto_escalates
+def test_tc_6_10_escalation_alert_job_emits_escalation_alert_audit
+def test_tc_6_11_addendum_incident_links_to_original_incident
+def test_tc_6_12_closed_incident_immutable_check_fires_before_version_check
+def test_tc_6_13_escalated_to_closed_requires_regulatory_submission_date
+def test_tc_6_14_stale_version_on_incident_returns_version_conflict
+def test_tc_6_15_closed_incident_patch_any_field_returns_immutable
 ```
 
 **test_audit_log.py** - cross-entity: verifies audit pipeline completeness across all six entities (regulatory gate)

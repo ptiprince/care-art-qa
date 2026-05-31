@@ -13,13 +13,13 @@
 | test_user.py | 13 | TC-2.1 - TC-2.13 | API, Business Rules | Unique constraints, RBAC, Auth, Account lockout, State machine, Audit log, Mandatory fields |
 | test_attendance.py | 12 | TC-3.1 - TC-3.12 | API, Business Rules | Unique constraints, RBAC, State machine, Billing units, Audit log, Billed immutability |
 | test_claim.py | 15 | TC-4.1 - TC-4.15 | API, Business Rules | Unique constraints, RBAC, State machine, Attendance integrity, Mandatory fields, Audit log, Billing units server-calculated, Phase 2 field rejection, Optimistic locking, Tenant isolation, Not found |
-| test_mar_record.py | 10 | 5.1 - 5.10 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, Optimistic locking |
-| test_incident.py | 8 | 6.1 - 6.8 | API, Business Rules | Unique constraints, RBAC, 42 CFR Part 2, State machine, Optimistic locking |
+| test_mar_record.py | 21 | TC-5.1 - TC-5.21 | API, Business Rules | Duplicate event, RBAC write, Controlled substance access gate 42 CFR Part 2, Status field rules, Administered time bounds, Immutability, State transitions, Correction record, Optimistic locking |
+| test_incident.py | 15 | TC-6.1 - TC-6.15 | API, Business Rules | Creation and audit, RBAC, SUD access gate 42 CFR Part 2, Auto-escalation, Escalation alert job, Addendum, Closed immutability, Regulatory submission gate, Optimistic locking |
 | test_audit_log.py | 9 | Cross-cutting | DB, Business Rules | Audit log completeness (regulatory gate) |
 | test_rbac_sweep.py | 9 | Cross-cutting | API | RBAC enforcement (security gate) |
 | test_tenant_isolation.py | 7 | Cross-cutting | API, Business Rules | Tenant isolation (security gate) |
 | db/test_schema.py | 8 | Cross-cutting | DB | Schema and constraint assertions (data integrity gate) |
-| **Total** | **103** | **70 entity TCs** | | |
+| **Total** | **121** | **88 entity TCs** | | |
 
 ---
 
@@ -97,33 +97,60 @@
 | test_tc_4_14_get_nonexistent_claim_returns_404 | TC-4.14 | API | GET /claims with non-existent claim_id returns 404 NOT_FOUND; response body contains error_code and claim_id |
 | test_tc_4_15_paid_claim_fully_immutable | TC-4.15 | Business Rules | PATCH paid claim any field returns 422 CLAIM_STATUS_IMMUTABLE; DB claim_status, version, and all fields unchanged after all rejected attempts |
 
-### 2.5 test_mar_record.py - MARRecord (10 tests)
+### 2.5 test_mar_record.py - MARRecord (21 tests)
 
-| Test Function | REQ_ID | Layer | What Is Verified |
+**Regulatory scope:** HIPAA §164.312(a)(2)(iv) · 42 CFR Part 2 §2.13(b) (controlled substance access gate)
+
+**Gate groups:** Duplicate event (5.1) · RBAC write (5.2, 5.3, 5.13) · Controlled substance access gate 42 CFR Part 2 (5.4, 5.6) · Status field rules (5.5, 5.7, 5.8) · Administered time bounds (5.9, 5.10, 5.11, 5.12) · Immutability (5.14, 5.15) · State transitions (5.16, 5.20) · Correction record (5.17, 5.18, 5.19) · Optimistic locking (5.21)
+
+| Test Function | TC | Layer | What Is Verified |
 |---|---|---|---|
-| test_5_1_unique_mar_per_participant_medication_and_scheduled_time | 5.1 | API | POST with same participant_id+medication_name+scheduled_time in same tenant returns 409 MAR_DUPLICATE_EVENT |
-| test_5_2_rbac_write_restricted_to_nurse_medication_aide | 5.2 | API | POST from care_coordinator or billing_specialist returns 403; service-layer check fires independently of gateway RBAC |
-| test_5_3_42cfr_part2_controlled_substance_access_gate | 5.3 | API | GET controlled-substance MARRecord from unauthorized role returns 403 with no record content or existence confirmation |
-| test_5_4_audit_log_on_controlled_substance_read_and_write | 5.4 | Business Rules | Write to controlled-substance MARRecord produces audit event before response; denied attempt produces ACCESS_DENIED event |
-| test_5_5_status_field_rules_administered_refused_held_missed | 5.5 | API | POST administered with null administered_time returns 422; POST refused or held with null notes returns 422 |
-| test_5_6_administered_time_required_and_within_bounds | 5.6 | API | Future administered_time returns 422 ADMIN_TIME_FUTURE; value more than 2 h before scheduled_time returns 422 ADMIN_TIME_TOO_EARLY |
-| test_5_7_route_must_be_oral_injection_or_topical | 5.7 | API | POST with route outside allowed enum returns 400; null route returns 400; valid route value returns 201 |
-| test_5_8_administered_record_is_immutable | 5.8 | API | PATCH on MARRecord with status=administered returns 422 for any field change |
-| test_5_9_correction_record_references_original_mar_id | 5.9 | Business Rules | Correction POST without 20-char notes returns 422; without original mar_id ref returns 422; valid correction returns 201 and original unchanged |
-| test_5_10_optimistic_locking_version_conflict_returns_409 | 5.10 | Business Rules | PATCH non-administered MARRecord with stale version returns 409 MAR_VERSION_CONFLICT; PATCH administered returns 422 before version check |
+| test_tc_5_1_duplicate_mar_event_returns_409 | TC-5.1 | API | POST with duplicate participant_id+medication_name+scheduled_time in same tenant returns 409 MAR_DUPLICATE_EVENT; DB confirms exactly one row |
+| test_tc_5_2_successful_mar_creation_audit_trail | TC-5.2 | Business Rules | POST by nurse_medication_aide returns 201; DB confirms created_by and tenant_id; PHI_WRITE audit event has all 11 mandatory fields |
+| test_tc_5_3_billing_specialist_cannot_create_mar | TC-5.3 | API | POST by billing_specialist returns 403 RBAC_DENIED; DB confirms no row created |
+| test_tc_5_4_controlled_substance_read_denied_for_non_privileged_role | TC-5.4 | API | GET controlled-substance MARRecord by non-privileged role returns 403 SUD_ACCESS_DENIED; ACCESS_DENIED audit event logged |
+| test_tc_5_5_administered_status_requires_administered_time | TC-5.5 | API | POST with status=administered and null administered_time returns 422 MAR_MISSING_ADMINISTERED_TIME; DB confirms no row created |
+| test_tc_5_6_controlled_substance_read_allowed_for_privileged_role | TC-5.6 | Business Rules | GET controlled-substance MARRecord by nurse_medication_aide returns 200; PHI_READ audit event logged with all 11 mandatory fields |
+| test_tc_5_7_refused_status_requires_notes | TC-5.7 | API | POST with status=refused and null notes returns 422 MAR_MISSING_NOTES; DB confirms no row created |
+| test_tc_5_8_held_status_requires_notes | TC-5.8 | API | POST with status=held and null notes returns 422 MAR_MISSING_NOTES; DB confirms no row created |
+| test_tc_5_9_future_administered_time_rejected | TC-5.9 | API | POST with administered_time in the future returns 422 ADMIN_TIME_FUTURE; DB confirms no row created |
+| test_tc_5_10_administered_time_too_early_rejected | TC-5.10 | API | POST with administered_time more than 2 hours before scheduled_time returns 422 ADMIN_TIME_TOO_EARLY; DB confirms no row created |
+| test_tc_5_11_administered_by_must_be_nurse_role | TC-5.11 | API | POST with administered_by referencing a non-nurse-role user returns 403; DB confirms no row created |
+| test_tc_5_12_administered_by_user_not_found_rejected | TC-5.12 | API | POST with administered_by referencing a non-existent user_id returns 403 or 422; DB confirms no row created |
+| test_tc_5_13_coordinator_cannot_create_mar | TC-5.13 | API | POST by care_coordinator returns 403 RBAC_DENIED; DB confirms no row created |
+| test_tc_5_14_administered_mar_is_immutable | TC-5.14 | Business Rules | PATCH on MARRecord with status=administered returns 422 MAR_ADMINISTERED_IMMUTABLE for any field change; DB confirms version unchanged |
+| test_tc_5_15_administered_mar_immutable_check_fires_before_version_check | TC-5.15 | Business Rules | PATCH with stale version on administered MAR returns 422 MAR_ADMINISTERED_IMMUTABLE not 409; immutability check fires before version check |
+| test_tc_5_16_patch_notes_on_missed_mar_succeeds | TC-5.16 | Business Rules | PATCH notes on missed MAR returns 200; DB confirms notes updated and version incremented |
+| test_tc_5_17_correction_mar_requires_original_mar_id | TC-5.17 | API | Correction POST without original_mar_id returns 422 MAR_CORRECTION_MISSING_ORIGINAL; DB confirms no correction row created |
+| test_tc_5_18_correction_mar_requires_notes_min_20_chars | TC-5.18 | API | Correction POST with notes shorter than 20 characters returns 422 MAR_CORRECTION_NOTES_TOO_SHORT; DB confirms no correction row created |
+| test_tc_5_19_correction_mar_with_valid_fields_succeeds | TC-5.19 | Business Rules | Correction POST with valid original_mar_id and notes >= 20 chars returns 201; DB confirms is_correction=True and original_mar_id set |
+| test_tc_5_20_patch_missed_mar_status_transition_succeeds | TC-5.20 | Business Rules | PATCH status from missed to held returns 200; DB confirms status changed and version incremented |
+| test_tc_5_21_stale_version_on_missed_mar_returns_version_conflict | TC-5.21 | Business Rules | PATCH with stale version on missed MAR returns 409 MAR_VERSION_CONFLICT; DB confirms version unchanged |
 
-### 2.6 test_incident.py - Incident (8 tests)
+### 2.6 test_incident.py - Incident (15 tests)
 
-| Test Function | REQ_ID | Layer | What Is Verified |
+**Regulatory scope:** HIPAA §164.308 · 42 CFR Part 2 §2.13(b) (SUD incident access gate) · State adult day care licensing (24-hour incident reporting)
+
+**Gate groups:** Creation and audit (6.1, 6.2) · RBAC (6.3, 6.4) · SUD access gate 42 CFR Part 2 (6.5, 6.7) · Auto-escalation (6.6, 6.9) · Escalation alert job (6.10) · Addendum (6.11) · Closed immutability (6.8, 6.12, 6.15) · Regulatory submission gate (6.13) · Optimistic locking (6.14)
+
+| Test Function | TC | Layer | What Is Verified |
 |---|---|---|---|
-| test_6_1_incident_id_is_sole_unique_constraint_no_composite_key | 6.1 | Business Rules | Two POSTs for same participant+date+type both return 201 with distinct incident_ids confirming no composite constraint |
-| test_6_2_rbac_staff_can_create_external_roles_denied | 6.2 | API | POST from any staff role returns 201; GET from physician or participant_family returns 403 |
-| test_6_3_42cfr_part2_sud_related_incident_access_gate | 6.3 | API | GET is_sud_related=true Incident from billing_specialist returns 403; list response redacts description and incident_type |
-| test_6_4_audit_log_on_sud_related_incident_read_and_write | 6.4 | Business Rules | Read or write on is_sud_related=true Incident produces audit event before response; unauthorized attempt produces ACCESS_DENIED event |
-| test_6_5_state_machine_auto_escalates_severe_and_medical_emergency | 6.5 | Business Rules | POST with severity=severe auto-sets status to escalated; PATCH close on escalated without regulatory_submission_date returns 422 INCIDENT_MISSING_REGULATORY_SUBMISSION |
-| test_6_6_alert_raised_when_escalated_incident_approaches_24_hour_deadline | 6.6 | Business Rules | Job identifies escalated Incident with null regulatory_submission_date and created_at > 20 h; alert and audit event confirmed |
-| test_6_7_closed_incident_is_immutable | 6.7 | API | PATCH on closed Incident returns 422; new Incident referencing original incident_id as addendum returns 201 |
-| test_6_8_optimistic_locking_version_conflict_returns_409 | 6.8 | Business Rules | PATCH with stale version returns 409 INCIDENT_VERSION_CONFLICT; PATCH closed returns 422 before version check |
+| test_tc_6_1_successful_incident_creation_audit_trail | TC-6.1 | Business Rules | POST /incidents by program_administrator returns 201 with status=draft; PHI_WRITE audit event logged with all 11 mandatory fields |
+| test_tc_6_2_admin_and_coordinator_can_create_incident | TC-6.2 | API | POST by program_administrator and care_coordinator each returns 201; DB confirms correct created_by for each |
+| test_tc_6_3_physician_cannot_create_incident | TC-6.3 | API | POST by physician returns 403 RBAC_DENIED; DB confirms no incident row created |
+| test_tc_6_4_physician_cannot_read_any_incident | TC-6.4 | API | GET /incidents/<id> by physician returns 403 RBAC_DENIED regardless of SUD status; ACCESS_DENIED audit event logged |
+| test_tc_6_5_billing_specialist_read_sud_incident_denied_with_audit | TC-6.5 | Business Rules | GET is_sud_related=true Incident by billing_specialist returns 403 SUD_ACCESS_DENIED; ACCESS_DENIED audit event logged with all 11 mandatory fields |
+| test_tc_6_6_medical_emergency_incident_auto_escalates | TC-6.6 | Business Rules | POST with incident_type=medical_emergency returns 201 with status=escalated; DB confirms auto-escalation |
+| test_tc_6_7_coordinator_can_read_sud_incident | TC-6.7 | Business Rules | GET is_sud_related=true Incident by care_coordinator returns 200; PHI_READ audit event logged with all 11 mandatory fields |
+| test_tc_6_8_closed_incident_is_immutable | TC-6.8 | Business Rules | PATCH on closed Incident returns 422 INCIDENT_CLOSED_IMMUTABLE; DB confirms all fields unchanged |
+| test_tc_6_9_severe_incident_auto_escalates | TC-6.9 | Business Rules | POST with severity=severe returns 201 with status=escalated; DB confirms status=escalated and severity=severe |
+| test_tc_6_10_escalation_alert_job_emits_escalation_alert_audit | TC-6.10 | Business Rules | GET /jobs/escalated-incidents-alert returns incident with created_at <= (now - 20h) and null regulatory_submission_date; ESCALATION_ALERT audit event logged |
+| test_tc_6_11_addendum_incident_links_to_original_incident | TC-6.11 | API | POST addendum incident with original_incident_id returns 201; DB confirms incident_type=addendum and original_incident_id set |
+| test_tc_6_12_closed_incident_immutable_check_fires_before_version_check | TC-6.12 | Business Rules | PATCH with stale version on closed Incident returns 422 INCIDENT_CLOSED_IMMUTABLE not 409; immutability check fires before version check |
+| test_tc_6_13_escalated_to_closed_requires_regulatory_submission_date | TC-6.13 | Business Rules | PATCH status=closed on escalated Incident without regulatory_submission_date returns 422 INCIDENT_MISSING_REGULATORY_SUBMISSION; DB status unchanged |
+| test_tc_6_14_stale_version_on_incident_returns_version_conflict | TC-6.14 | Business Rules | PATCH with stale version on open Incident returns 409 INCIDENT_VERSION_CONFLICT; DB confirms version unchanged |
+| test_tc_6_15_closed_incident_patch_any_field_returns_immutable | TC-6.15 | Business Rules | PATCH any field on closed Incident with correct version returns 422 INCIDENT_CLOSED_IMMUTABLE; DB confirms all fields unchanged |
+
 
 ---
 
@@ -206,7 +233,7 @@ Data integrity gate. Bypasses the application and asserts directly against the S
 
 ### 5.1 REQ_ID Coverage
 
-All 70 Phase 1 test cases have a dedicated test function. The table below shows the count per entity.
+All 88 Phase 1 test cases have a dedicated test function. The table below shows the count per entity.
 
 | Entity | TCs | Test Functions | Uncovered |
 |---|---|---|---|
@@ -214,9 +241,9 @@ All 70 Phase 1 test cases have a dedicated test function. The table below shows 
 | User | TC-2.1 - TC-2.13 | 13 | 0 |
 | Attendance | TC-3.1 - TC-3.12 | 12 | 0 |
 | Claim | TC-4.1 - TC-4.15 | 15 | 0 |
-| MARRecord | 5.1 - 5.10 | 10 | 0 |
-| Incident | 6.1 - 6.8 | 8 | 0 |
-| **Total** | **70** | **70** | **0** |
+| MARRecord | TC-5.1 - TC-5.21 | 21 | 0 |
+| Incident | TC-6.1 - TC-6.15 | 15 | 0 |
+| **Total** | **88** | **88** | **0** |
 
 ### 5.2 Test Layer Distribution
 
@@ -246,3 +273,39 @@ All 70 Phase 1 test cases have a dedicated test function. The table below shows 
 | Schema and constraints (DB backstop) | db/test_schema.py | 8 |
 
 ---
+
+## 6. CI Gate
+
+### 6.5 P1 Gate Test Functions
+
+The following 26 test functions plus db/test_schema.py (all 8 tests) run in the GitHub Actions P1 gate job on every push and pull request to main. The list matches ci.yml exactly.
+
+| Test File | Test Function | TC |
+|---|---|---|
+| tests/test_participant.py | test_tc_1_1_positive_participant_creation_by_program_administrator | TC-1.1 |
+| tests/test_participant.py | test_tc_1_4_duplicate_medicaid_id_returns_409 | TC-1.4 |
+| tests/test_participant.py | test_tc_1_5_sud_record_billing_specialist_returns_403_no_disclosure | TC-1.5 |
+| tests/test_participant.py | test_tc_1_9_soft_delete_returns_200_is_deleted_true | TC-1.9 |
+| tests/test_user.py | test_tc_2_1_positive_user_creation_by_program_administrator | TC-2.1 |
+| tests/test_user.py | test_tc_2_2_user_creation_by_unauthorized_role_returns_403 | TC-2.2 |
+| tests/test_user.py | test_tc_2_4_login_wrong_password_returns_401_no_credential_disclosure | TC-2.4 |
+| tests/test_user.py | test_tc_2_7_account_lockout_after_5_failed_logins | TC-2.7 |
+| tests/test_attendance.py | test_tc_3_1_positive_attendance_creation_by_program_administrator | TC-3.1 |
+| tests/test_attendance.py | test_tc_3_5_duplicate_participant_date_returns_409 | TC-3.5 |
+| tests/test_attendance.py | test_tc_3_2_positive_attendance_creation_by_care_coordinator | TC-3.2 |
+| tests/test_claim.py | test_tc_4_1_duplicate_claim_reference_returns_409 | TC-4.1 |
+| tests/test_claim.py | test_tc_4_2_composite_duplicate_returns_409_claim_duplicate | TC-4.2 |
+| tests/test_claim.py | test_tc_4_3_unauthorized_roles_post_claims_returns_403 | TC-4.3 |
+| tests/test_claim.py | test_tc_4_5_attendance_status_validation_and_confirmed_creates_claim | TC-4.5 |
+| tests/test_claim.py | test_tc_4_8_phi_write_and_phi_disclose_audit_events_in_db | TC-4.8 |
+| tests/test_mar_record.py | test_tc_5_1_duplicate_mar_event_returns_409 | TC-5.1 |
+| tests/test_mar_record.py | test_tc_5_2_successful_mar_creation_audit_trail | TC-5.2 |
+| tests/test_mar_record.py | test_tc_5_3_billing_specialist_cannot_create_mar | TC-5.3 |
+| tests/test_mar_record.py | test_tc_5_4_controlled_substance_read_denied_for_non_privileged_role | TC-5.4 |
+| tests/test_mar_record.py | test_tc_5_5_administered_status_requires_administered_time | TC-5.5 |
+| tests/test_incident.py | test_tc_6_1_successful_incident_creation_audit_trail | TC-6.1 |
+| tests/test_incident.py | test_tc_6_2_admin_and_coordinator_can_create_incident | TC-6.2 |
+| tests/test_incident.py | test_tc_6_3_physician_cannot_create_incident | TC-6.3 |
+| tests/test_incident.py | test_tc_6_5_billing_specialist_read_sud_incident_denied_with_audit | TC-6.5 |
+| tests/test_incident.py | test_tc_6_8_closed_incident_is_immutable | TC-6.8 |
+| db/test_schema.py | (all 8 tests) | - |

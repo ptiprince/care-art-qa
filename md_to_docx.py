@@ -179,6 +179,16 @@ def _apply_col_widths(table, widths_cm: list) -> None:
         tbl.remove(old)
     tbl_pr = tbl.find(qn("w:tblPr"))
     if tbl_pr is not None:
+        total_twips = sum(int(Cm(w).twips) for w in widths_cm)
+        tblW = OxmlElement("w:tblW")
+        tblW.set(qn("w:w"), str(total_twips))
+        tblW.set(qn("w:type"), "dxa")
+        tbl_pr.append(tblW)
+
+        tblLayout = OxmlElement("w:tblLayout")
+        tblLayout.set(qn("w:type"), "fixed")
+        tbl_pr.append(tblLayout)
+
         tbl_pr.addnext(tbl_grid)
     else:
         tbl.insert(0, tbl_grid)
@@ -217,6 +227,43 @@ def _parse_table_rows(lines: list) -> list:
     return rows
 
 
+def _col0_entity_test(para, text: str, is_header: bool) -> None:
+    """Fill col-0 of an entity test table.
+
+    Splits on '_': each segment run gets w:noBreak so Word cannot break inside
+    a segment.  The '_' separator runs do NOT get w:noBreak, so those positions
+    remain the only legal line-break opportunities.
+    """
+    parts = text.split("_")
+    for idx, part in enumerate(parts):
+        r = para.add_run(part)
+        r.font.name = FONT
+        r.font.size = BODY_PT
+        if is_header:
+            r.bold = True
+        rPr = r._r.get_or_add_rPr()
+        rPr.append(OxmlElement("w:noBreak"))
+        if rPr.find(qn("w:noProof")) is None:
+            rPr.append(OxmlElement("w:noProof"))
+        if idx < len(parts) - 1:
+            sep = para.add_run("_")
+            sep.font.name = FONT
+            sep.font.size = BODY_PT
+            if is_header:
+                sep.bold = True
+            rPr_sep = sep._r.get_or_add_rPr()
+            if rPr_sep.find(qn("w:noProof")) is None:
+                rPr_sep.append(OxmlElement("w:noProof"))
+            zwsp = para.add_run("​")
+            zwsp.font.name = FONT
+            zwsp.font.size = BODY_PT
+            if is_header:
+                zwsp.bold = True
+            rPr_zw = zwsp._r.get_or_add_rPr()
+            if rPr_zw.find(qn("w:noProof")) is None:
+                rPr_zw.append(OxmlElement("w:noProof"))
+
+
 def _add_table(doc, tbl_lines: list) -> None:
     rows = _parse_table_rows(tbl_lines)
     if not rows:
@@ -230,54 +277,62 @@ def _add_table(doc, tbl_lines: list) -> None:
             "– please review manually."
         )
 
-    # Column widths: per-column minimum sized to fit the longest single word,
-    # then proportional distribution of remaining space based on max cell length.
-    #
-    # min[i] = longest_word_chars[i] * 0.2 cm  (Calibri 12pt ≈ 0.2 cm/char)
-    # Iterative: pin columns whose proportional share < their min, redistribute
-    # remainder among free columns. When sum(mins) > page width, fall back to
-    # pure proportional (minimums cannot all be honoured).
-    CM_PER_CHAR = 0.2
-
-    col_max_cell = [1] * n_cols   # max total plain-text chars per column
-    col_max_word = [1] * n_cols   # max single-word chars per column
-
-    for row in rows:
-        for i, cell in enumerate(row[:n_cols]):
-            plain = _plain(cell)
-            col_max_cell[i] = max(col_max_cell[i], len(plain))
-            words = plain.split()
-            if words:
-                col_max_word[i] = max(col_max_word[i], max(len(w) for w in words))
-
-    col_min = [col_max_word[i] * CM_PER_CHAR for i in range(n_cols)]
-
-    if sum(col_min) <= PAGE_USABLE_CM:
-        col_cm = [0.0] * n_cols
-        fixed: set = set()
-        remaining = PAGE_USABLE_CM
-        for _ in range(n_cols):
-            free = [i for i in range(n_cols) if i not in fixed]
-            if not free:
-                break
-            total_free = sum(col_max_cell[i] for i in free) or 1
-            prop = {i: remaining * col_max_cell[i] / total_free for i in free}
-            under = [i for i in free if prop[i] < col_min[i]]
-            if not under:
-                for i in free:
-                    col_cm[i] = prop[i]
-                break
-            for i in under:
-                col_cm[i] = col_min[i]
-                remaining -= col_min[i]
-                fixed.add(i)
+    # Fixed widths for 4-column entity test tables (col 1 = 4.5 cm, col 2 = 2 cm,
+    # col 3 = 2 cm, col 4 = 7.5 cm, total = 16 cm).
+    _ENTITY_HDR = ["Test Function", "TC", "Layer", "What Is Verified"]
+    if n_cols == 4 and rows and [_plain(c) for c in rows[0]] == _ENTITY_HDR:
+        col_cm = [4.5, 2.0, 2.0, 7.5]
     else:
-        total_chars = sum(col_max_cell)
-        col_cm = [PAGE_USABLE_CM * col_max_cell[i] / total_chars for i in range(n_cols)]
+        # Column widths: per-column minimum sized to fit the longest single word,
+        # then proportional distribution of remaining space based on max cell length.
+        #
+        # min[i] = longest_word_chars[i] * 0.2 cm  (Calibri 12pt ≈ 0.2 cm/char)
+        # Iterative: pin columns whose proportional share < their min, redistribute
+        # remainder among free columns. When sum(mins) > page width, fall back to
+        # pure proportional (minimums cannot all be honoured).
+        CM_PER_CHAR = 0.2
 
-    # Normalise to exactly PAGE_USABLE_CM (guards against float drift)
-    col_total = sum(col_cm)
-    col_cm = [c * PAGE_USABLE_CM / col_total for c in col_cm]
+        col_max_cell = [1] * n_cols   # max total plain-text chars per column
+        col_max_word = [1] * n_cols   # max single-word chars per column
+
+        for row in rows:
+            for i, cell in enumerate(row[:n_cols]):
+                plain = _plain(cell)
+                col_max_cell[i] = max(col_max_cell[i], len(plain))
+                words = plain.split()
+                if words:
+                    col_max_word[i] = max(col_max_word[i], max(len(w) for w in words))
+
+        col_min = [col_max_word[i] * CM_PER_CHAR for i in range(n_cols)]
+
+        if sum(col_min) <= PAGE_USABLE_CM:
+            col_cm = [0.0] * n_cols
+            fixed: set = set()
+            remaining = PAGE_USABLE_CM
+            for _ in range(n_cols):
+                free = [i for i in range(n_cols) if i not in fixed]
+                if not free:
+                    break
+                total_free = sum(col_max_cell[i] for i in free) or 1
+                prop = {i: remaining * col_max_cell[i] / total_free for i in free}
+                under = [i for i in free if prop[i] < col_min[i]]
+                if not under:
+                    for i in free:
+                        col_cm[i] = prop[i]
+                    break
+                for i in under:
+                    col_cm[i] = col_min[i]
+                    remaining -= col_min[i]
+                    fixed.add(i)
+        else:
+            total_chars = sum(col_max_cell)
+            col_cm = [PAGE_USABLE_CM * col_max_cell[i] / total_chars for i in range(n_cols)]
+
+        # Normalise to exactly PAGE_USABLE_CM (guards against float drift)
+        col_total = sum(col_cm)
+        col_cm = [c * PAGE_USABLE_CM / col_total for c in col_cm]
+
+    is_entity_table = (col_cm == [4.5, 2.0, 2.0, 7.5])
 
     table = doc.add_table(rows=n_rows, cols=n_cols)
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -293,12 +348,15 @@ def _add_table(doc, tbl_lines: list) -> None:
             para = cell.paragraphs[0]
             para.clear()
             _fmt_para(para)
-            _inline(para, text)
-            if is_header:
-                for run in para.runs:
-                    run.bold = True
-                    run.font.name = FONT
-                    run.font.size = BODY_PT
+            if is_entity_table and c_idx == 0:
+                _col0_entity_test(para, text, is_header)
+            else:
+                _inline(para, text)
+                if is_header:
+                    for run in para.runs:
+                        run.bold = True
+                        run.font.name = FONT
+                        run.font.size = BODY_PT
 
 
 # ── Page numbers ──────────────────────────────────────────────────────────────
