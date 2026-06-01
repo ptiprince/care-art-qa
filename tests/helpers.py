@@ -1,6 +1,7 @@
 """Utility helpers for Care Art Phase 1 tests."""
 
 import uuid
+from datetime import datetime, timezone, timedelta
 
 TENANT_A = "tenant-aaa-001"
 TENANT_B = "tenant-bbb-002"
@@ -32,12 +33,16 @@ def make_headers(
 
 def make_participant(client, headers, tenant_id=TENANT_A, medicaid_id=None,
                      is_sud_record=False, **kwargs):
+    enrollment_date = kwargs.pop(
+        "enrollment_date",
+        datetime.now(timezone.utc).date().isoformat(),
+    )
     payload = {
         "tenant_id": tenant_id,
         "first_name": "Jane",
         "last_name": "Doe",
-        "date_of_birth": "1980-01-15",
-        "enrollment_date": "2026-01-01",
+        "date_of_birth": (datetime.now(timezone.utc).date() - timedelta(days=365 * 45)).isoformat(),
+        "enrollment_date": enrollment_date,
         "is_sud_record": is_sud_record,
     }
     if medicaid_id:
@@ -71,7 +76,9 @@ def make_nurse_user(client, headers, tenant_id=TENANT_A, email=None):
 
 
 def make_attendance(client, headers, participant_id, tenant_id=TENANT_A,
-                    date_of_service="2026-03-01", status="pending", **kwargs):
+                    date_of_service=None, status="pending", **kwargs):
+    if date_of_service is None:
+        date_of_service = (datetime.now(timezone.utc).date() - timedelta(days=10)).isoformat()
     payload = {
         "tenant_id": tenant_id,
         "participant_id": participant_id,
@@ -85,7 +92,9 @@ def make_attendance(client, headers, participant_id, tenant_id=TENANT_A,
 
 
 def make_confirmed_attendance(client, headers, participant_id, tenant_id=TENANT_A,
-                              date_of_service="2026-03-01", **kwargs):
+                              date_of_service=None, **kwargs):
+    if date_of_service is None:
+        date_of_service = (datetime.now(timezone.utc).date() - timedelta(days=10)).isoformat()
     att = make_attendance(client, headers, participant_id, tenant_id, date_of_service, **kwargs)
     att_id = att["attendance_id"]
     r = client.patch(
@@ -98,13 +107,16 @@ def make_confirmed_attendance(client, headers, participant_id, tenant_id=TENANT_
 
 
 def make_claim(client, headers, participant_id, attendance_ids, tenant_id=TENANT_A, **kwargs):
+    if "date_of_service_start" not in kwargs:
+        kwargs["date_of_service_start"] = (
+            datetime.now(timezone.utc).date() - timedelta(days=11)
+        ).isoformat()
     payload = {
         "tenant_id": tenant_id,
         "participant_id": participant_id,
         "attendance_ids": attendance_ids,
         "payer_type": "medicaid",
         "procedure_code": "S5101",
-        "date_of_service_start": "2026-03-01",
     }
     payload.update(kwargs)
     r = client.post("/claims", json=payload, headers=headers)
@@ -116,7 +128,9 @@ def make_mar_record(client, headers, participant_id, administered_by,
                     tenant_id=TENANT_A, scheduled_time=None,
                     is_controlled_substance=False, status="administered",
                     medication_name="Metformin", **kwargs):
-    st = scheduled_time or "2026-03-01T09:00:00"
+    st = scheduled_time or (
+        datetime.now(timezone.utc) - timedelta(hours=2)
+    ).strftime("%Y-%m-%dT%H:%M:%S")
     payload = {
         "tenant_id": tenant_id,
         "participant_id": participant_id,
@@ -127,7 +141,6 @@ def make_mar_record(client, headers, participant_id, administered_by,
         "is_controlled_substance": is_controlled_substance,
     }
     if status == "administered" and "administered_time" not in kwargs:
-        # Use the same date but 5 minutes after scheduled time (always in the past for past dates)
         st_date = st[:10]
         st_hour = int(st[11:13])
         st_min = int(st[14:16])
@@ -143,7 +156,9 @@ def make_mar_record(client, headers, participant_id, administered_by,
 
 def make_incident(client, headers, participant_id, tenant_id=TENANT_A,
                   incident_type="fall", severity="minor", is_sud_related=False,
-                  incident_date="2026-03-01", description="Test incident.", **kwargs):
+                  incident_date=None, description="Test incident.", **kwargs):
+    if incident_date is None:
+        incident_date = (datetime.now(timezone.utc).date() - timedelta(days=30)).isoformat()
     payload = {
         "tenant_id": tenant_id,
         "participant_id": participant_id,

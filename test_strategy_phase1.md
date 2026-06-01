@@ -393,7 +393,7 @@ def test_tc_1_11_missing_first_name_returns_400_with_field_name
 def test_tc_1_12_missing_enrollment_date_returns_400_with_field_name
 ```
 
-**test_user.py** - 13 functions (TC-2.1 - TC-2.13)
+**test_user.py** - 15 functions (TC-2.1 - TC-2.15)
 
 ```
 def test_tc_2_1_positive_user_creation_by_program_administrator
@@ -409,6 +409,8 @@ def test_tc_2_10_audit_log_on_user_creation_has_mandatory_fields_no_pii
 def test_tc_2_11_missing_email_returns_400_or_422_with_field_name
 def test_tc_2_12_billing_specialist_create_participant_returns_403
 def test_tc_2_13_nurse_create_claim_returns_403
+def test_tc_2_14_inactive_user_denied_before_role_evaluation
+def test_tc_2_15_suspended_user_denied_before_role_evaluation
 ```
 
 **test_attendance.py** - 12 functions (TC-3.1 - TC-3.12)
@@ -494,11 +496,49 @@ def test_tc_6_14_stale_version_on_incident_returns_version_conflict
 def test_tc_6_15_closed_incident_patch_any_field_returns_immutable
 ```
 
-**test_audit_log.py** - cross-entity: verifies audit pipeline completeness across all six entities (regulatory gate)
+**test_audit_log.py** - 10 functions (TC-7.1 - TC-7.10)
 
-**test_rbac_sweep.py** - cross-entity: parametrized matrix of all roles against all entity endpoints (security gate)
+```
+def test_tc_7_1_audit_mandatory_fields_present_on_participant_write
+def test_tc_7_2_unauthorized_role_denied_write_phi_resource_access_denied_audit_logged
+def test_tc_7_3_audit_mandatory_fields_present_on_mar_controlled_substance_read
+def test_tc_7_4_phi_values_absent_from_audit_log_payloads_across_all_entities
+def test_tc_7_5_access_denied_audit_event_logged_for_every_403_response
+def test_tc_7_6_audit_row_exists_in_db_after_api_call_completes
+def test_tc_7_7_claim_submission_produces_phi_disclose_audit_event
+def test_tc_7_8_sud_related_incident_write_produces_separate_audit_event
+def test_tc_7_9_claim_audit_events_carry_10_year_retention_marker
+def test_tc_7_10_audit_log_rows_contain_no_raw_phi_field_values
+```
 
-**test_tenant_isolation.py** - cross-entity: verifies no record from tenant A is accessible to tenant B users (security gate)
+**test_rbac_sweep.py** - 12 functions (TC-8.1 - TC-8.12)
+
+```
+def test_tc_8_1_program_administrator_write_permitted_on_attendance_and_claims
+def test_tc_8_2_care_coordinator_write_permitted_on_attendance_and_incidents
+def test_tc_8_3_nurse_medication_aide_write_permitted_on_mar_record_only
+def test_tc_8_4_billing_specialist_write_permitted_on_claims_only
+def test_tc_8_5_physician_denied_write_on_participant_endpoint
+def test_tc_8_6_physician_denied_write_on_user_endpoint
+def test_tc_8_7_physician_denied_write_on_attendance_endpoint
+def test_tc_8_8_physician_denied_write_on_claim_endpoint
+def test_tc_8_9_physician_denied_write_on_mar_record_endpoint
+def test_tc_8_10_physician_denied_write_on_incident_endpoint
+def test_tc_8_11_participant_family_denied_all_staff_entity_endpoints
+def test_tc_8_12_compliance_officer_read_permitted_on_all_entities
+```
+
+**test_tenant_isolation.py** - 7 functions (TC-9.1 - TC-9.7)
+
+```
+def test_tc_9_1_participant_not_accessible_from_other_tenant
+def test_tc_9_2_user_token_rejected_on_other_tenant_endpoints
+def test_tc_9_3_attendance_not_accessible_from_other_tenant
+def test_tc_9_4_claim_not_accessible_from_other_tenant
+def test_tc_9_5_mar_record_not_accessible_from_other_tenant
+def test_tc_9_6_incident_not_accessible_from_other_tenant
+def test_tc_9_7_unique_constraints_are_scoped_per_tenant
+```
 
 **db/conftest.py** - sqlite3 read-only connection fixture
 
