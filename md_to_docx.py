@@ -277,11 +277,25 @@ def _add_table(doc, tbl_lines: list) -> None:
             "– please review manually."
         )
 
-    # Fixed widths for 4-column entity test tables (col 1 = 4.5 cm, col 2 = 2 cm,
-    # col 3 = 2 cm, col 4 = 7.5 cm, total = 16 cm).
     _ENTITY_HDR = ["Test Function", "TC", "Layer", "What Is Verified"]
-    if n_cols == 4 and rows and [_plain(c) for c in rows[0]] == _ENTITY_HDR:
+    _OVERVIEW_HDR = ["Test File", "Tests", "REQ_IDs Covered", "Layer(s)", "Gate Group", "Status"]
+    _DB_HDR = ["Test Function", "Layer", "What Is Verified"]
+    _GATE_HDR = ["Gate Group", "Test Type", "Rationale"]
+    _NONBLOCK_HDR = ["Group", "Current Status", "Phase 2 Gate"]
+    _P1GATE_HDR = ["Test File", "Test Function", "TC"]
+
+    if n_cols == 6 and rows and [_plain(c) for c in rows[0]] == _OVERVIEW_HDR:
+        col_cm = [4.0, 1.5, 3.0, 2.0, 3.5, 2.0]  # Section 1 Overview: col1 -2cm, col2 +0.5cm, col3 +1cm, col4 +1cm
+    elif n_cols == 4 and rows and [_plain(c) for c in rows[0]] == _ENTITY_HDR:
         col_cm = [4.5, 2.0, 2.0, 7.5]
+    elif n_cols == 3 and rows and [_plain(c) for c in rows[0]] == _DB_HDR:
+        col_cm = [4.5, 2.0, 9.5]  # Section 4 DB Layer: col1=4.5cm, col2=2cm, col3=remainder
+    elif n_cols == 3 and rows and [_plain(c) for c in rows[0]] == _GATE_HDR:
+        col_cm = [5.0, 3.0, 8.0]  # Section 6.2: col1 -1cm, col2 +1cm
+    elif n_cols == 3 and rows and [_plain(c) for c in rows[0]] == _NONBLOCK_HDR:
+        col_cm = [5.0, 3.0, 8.0]  # Section 6.3: col1 -1cm, col2 +1cm
+    elif n_cols == 3 and rows and [_plain(c) for c in rows[0]] == _P1GATE_HDR:
+        col_cm = [3.5, 10.5, 2.0]  # Section 6.5: col1 -1cm, col3 +1cm
     else:
         # Column widths: per-column minimum sized to fit the longest single word,
         # then proportional distribution of remaining space based on max cell length.
@@ -332,7 +346,7 @@ def _add_table(doc, tbl_lines: list) -> None:
         col_total = sum(col_cm)
         col_cm = [c * PAGE_USABLE_CM / col_total for c in col_cm]
 
-    is_entity_table = (col_cm == [4.5, 2.0, 2.0, 7.5])
+    is_col0_testname = col_cm in ([4.5, 2.0, 2.0, 7.5], [4.5, 2.0, 9.5], [3.5, 10.5, 2.0])
 
     table = doc.add_table(rows=n_rows, cols=n_cols)
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -348,7 +362,7 @@ def _add_table(doc, tbl_lines: list) -> None:
             para = cell.paragraphs[0]
             para.clear()
             _fmt_para(para)
-            if is_entity_table and c_idx == 0:
+            if is_col0_testname and (c_idx == 0 or (col_cm == [3.5, 10.5, 2.0] and c_idx == 1)):
                 _col0_entity_test(para, text, is_header)
             else:
                 _inline(para, text)

@@ -289,6 +289,12 @@ def get_participant(participant_id: str, request: Request, db: Session = Depends
         _404("Participant", participant_id)
 
     if caller["tenant_id"] and row.tenant_id != caller["tenant_id"]:
+        _emit_audit(
+            db, caller["user_id"], caller["tenant_id"], caller["session_id"],
+            "ACCESS_DENIED", "Participant", participant_id,
+            ["tenant_id"], caller["source_ip"], "DENIED",
+        )
+        db.commit()
         _404("Participant", participant_id)
 
     if row.is_sud_record:
@@ -664,6 +670,12 @@ def get_attendance(attendance_id: str, request: Request, db: Session = Depends(g
     if not row:
         _404("Attendance", attendance_id)
     if caller["tenant_id"] and row.tenant_id != caller["tenant_id"]:
+        _emit_audit(
+            db, caller["user_id"], caller["tenant_id"], caller["session_id"],
+            "ACCESS_DENIED", "Attendance", attendance_id,
+            ["tenant_id"], caller["source_ip"], "DENIED",
+        )
+        db.commit()
         _404("Attendance", attendance_id)
     return AttendanceResponse.model_validate(row)
 
@@ -851,6 +863,12 @@ def get_claim(claim_id: str, request: Request, db: Session = Depends(get_db)):
     if not row:
         _404("Claim", claim_id)
     if caller["tenant_id"] and row.tenant_id != caller["tenant_id"]:
+        _emit_audit(
+            db, caller["user_id"], caller["tenant_id"], caller["session_id"],
+            "ACCESS_DENIED", "Claim", claim_id,
+            ["tenant_id"], caller["source_ip"], "DENIED",
+        )
+        db.commit()
         _404("Claim", claim_id)
     return ClaimResponse.model_validate(row)
 
@@ -1043,6 +1061,12 @@ def get_mar_record(mar_id: str, request: Request, db: Session = Depends(get_db))
     if not row:
         _404("MARRecord", mar_id)
     if caller["tenant_id"] and row.tenant_id != caller["tenant_id"]:
+        _emit_audit(
+            db, caller["user_id"], caller["tenant_id"], caller["session_id"],
+            "ACCESS_DENIED", "MARRecord", mar_id,
+            ["tenant_id"], caller["source_ip"], "DENIED",
+        )
+        db.commit()
         _404("MARRecord", mar_id)
 
     if row.is_controlled_substance:
@@ -1187,6 +1211,12 @@ def get_incident(incident_id: str, request: Request, db: Session = Depends(get_d
     if not row:
         _404("Incident", incident_id)
     if caller["tenant_id"] and row.tenant_id != caller["tenant_id"]:
+        _emit_audit(
+            db, caller["user_id"], caller["tenant_id"], caller["session_id"],
+            "ACCESS_DENIED", "Incident", incident_id,
+            ["tenant_id"], caller["source_ip"], "DENIED",
+        )
+        db.commit()
         _404("Incident", incident_id)
 
     if row.is_sud_related:

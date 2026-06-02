@@ -222,16 +222,16 @@ Supported REQ_IDs: 1.1, 2.1, 3.1, 4.1, 4.2, 5.1
 
 Data integrity gate. Bypasses the application and asserts directly against the SQLite schema that every UNIQUE index, NOT NULL constraint, version column, and soft-delete default exists as defined in the architecture. Confirms the database is a backstop independent of application-layer enforcement.
 
-| Test Function | Layer | What Is Verified |
-|---|---|---|
-| test_schema_participant_unique_index_tenant_medicaid_id | DB | UNIQUE index on (tenant_id, medicaid_id) present on participant table via PRAGMA index_list |
-| test_schema_user_unique_indexes_and_primary_key | DB | UNIQUE index on (tenant_id, email) and PRIMARY KEY on user_id present on user table |
-| test_schema_attendance_unique_index_tenant_participant_date | DB | UNIQUE index on (tenant_id, participant_id, date_of_service) present on attendance table |
-| test_schema_claim_unique_indexes_reference_and_composite | DB | UNIQUE index on claim_reference_number and composite billing key both present on claim table |
-| test_schema_mar_record_unique_index_participant_medication_time | DB | UNIQUE index on (tenant_id, participant_id, medication_name, scheduled_time) present on mar_record table |
-| test_schema_not_null_constraints_on_all_mandatory_fields | DB | NOT NULL confirmed on all mandatory fields for all six entities via PRAGMA table_info |
-| test_schema_version_column_present_on_all_entity_tables | DB | version column of INTEGER type exists on all six entity tables |
-| test_schema_is_deleted_defaults_false_on_participant_and_user | DB | is_deleted column has DEFAULT false on participant and user tables; no row has null is_deleted |
+| Test Function | TC | Layer | What Is Verified |
+|---|---|---|---|
+| test_schema_participant_unique_index_tenant_medicaid_id | TC-10.1 | DB | UNIQUE index on (tenant_id, medicaid_id) present on participant table via PRAGMA index_list |
+| test_schema_user_unique_indexes_and_primary_key | TC-10.2 | DB | UNIQUE index on (tenant_id, email) and PRIMARY KEY on user_id present on user table |
+| test_schema_attendance_unique_index_tenant_participant_date | TC-10.3 | DB | UNIQUE index on (tenant_id, participant_id, date_of_service) present on attendance table |
+| test_schema_claim_unique_indexes_reference_and_composite | TC-10.4 | DB | UNIQUE index on claim_reference_number and composite billing key both present on claim table |
+| test_schema_mar_record_unique_index_participant_medication_time | TC-10.5 | DB | UNIQUE index on (tenant_id, participant_id, medication_name, scheduled_time) present on mar_record table |
+| test_schema_not_null_constraints_on_all_mandatory_fields | TC-10.6 | DB | NOT NULL confirmed on all mandatory fields for all six entities via PRAGMA table_info |
+| test_schema_version_column_present_on_all_entity_tables | TC-10.7 | DB | version column of INTEGER type exists on all six entity tables |
+| test_schema_is_deleted_defaults_false_on_participant_and_user | TC-10.8 | DB | is_deleted column has DEFAULT false on participant and user tables; no row has null is_deleted |
 
 ---
 
@@ -260,19 +260,19 @@ All 90 Phase 1 test cases have a dedicated test function. The table below shows 
 | DB | 9 | Index presence, constraint existence, column defaults, schema assertions |
 | **Total** | **123** | |
 
-94 tests written, 29 planned (test_audit_log.py 10, test_rbac_sweep.py 12, test_tenant_isolation.py 7).
+123 tests written, 0 planned.
 
 ### 5.3 Gate Group to Test File Mapping
 
 | Gate Group | Test File(s) | Test Count | Notes |
 |---|---|---|---|
 | Unique constraints | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_mar_record.py, test_incident.py | 7 | - |
-| RBAC enforcement | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_mar_record.py, test_incident.py, test_rbac_sweep.py | 15 | test_rbac_sweep.py planned, not yet written |
+| RBAC enforcement | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_mar_record.py, test_incident.py, test_rbac_sweep.py | 15 | - |
 | 42 CFR Part 2 access gate | test_participant.py, test_mar_record.py, test_incident.py | 3 | - |
 | Audit log completeness | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_mar_record.py, test_incident.py, test_audit_log.py | 15 | - |
 | State machine transitions | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_incident.py | 8 | - |
 | Optimistic locking | test_participant.py, test_user.py, test_attendance.py, test_claim.py, test_mar_record.py, test_incident.py | 6 | - |
-| Tenant isolation | test_tenant_isolation.py, test_claim.py | 8 | test_tenant_isolation.py planned, not yet written |
+| Tenant isolation | test_tenant_isolation.py, test_claim.py | 8 | - |
 | Phase 2 field rejection | test_claim.py | 1 | - |
 | Attendance integrity | test_claim.py | 3 | - |
 | Mandatory fields | test_claim.py | 1 | - |
@@ -323,7 +323,7 @@ Line coverage of the mock backend routes and service layer must reach 80% before
 
 ### 6.5 P1 Gate Test Functions
 
-The following 26 test functions plus db/test_schema.py (all 8 tests) run in the GitHub Actions P1 gate job on every push and pull request to main. The list matches ci.yml exactly.
+The following 44 test functions run in the GitHub Actions P1 gate job on every push and pull request to main. The list matches ci.yml exactly.
 
 | Test File | Test Function | TC |
 |---|---|---|
@@ -353,4 +353,21 @@ The following 26 test functions plus db/test_schema.py (all 8 tests) run in the 
 | tests/test_incident.py | test_tc_6_3_physician_cannot_create_incident | TC-6.3 |
 | tests/test_incident.py | test_tc_6_5_billing_specialist_read_sud_incident_denied_with_audit | TC-6.5 |
 | tests/test_incident.py | test_tc_6_8_closed_incident_is_immutable | TC-6.8 |
-| db/test_schema.py | (all 8 tests) | - |
+| tests/test_audit_log.py | test_tc_7_1_audit_mandatory_fields_present_on_participant_write | TC-7.1 |
+| tests/test_audit_log.py | test_tc_7_2_unauthorized_role_denied_write_phi_resource_access_denied_audit_logged | TC-7.2 |
+| tests/test_rbac_sweep.py | test_tc_8_5_physician_denied_write_on_participant_endpoint | TC-8.5 |
+| tests/test_rbac_sweep.py | test_tc_8_6_physician_denied_write_on_user_endpoint | TC-8.6 |
+| tests/test_rbac_sweep.py | test_tc_8_7_physician_denied_write_on_attendance_endpoint | TC-8.7 |
+| tests/test_rbac_sweep.py | test_tc_8_8_physician_denied_write_on_claim_endpoint | TC-8.8 |
+| tests/test_rbac_sweep.py | test_tc_8_9_physician_denied_write_on_mar_record_endpoint | TC-8.9 |
+| tests/test_rbac_sweep.py | test_tc_8_10_physician_denied_write_on_incident_endpoint | TC-8.10 |
+| tests/test_rbac_sweep.py | test_tc_8_11_participant_family_denied_all_staff_entity_endpoints | TC-8.11 |
+| tests/test_tenant_isolation.py | test_tc_9_1_participant_not_accessible_from_other_tenant | TC-9.1 |
+| tests/db/test_schema.py | test_schema_participant_unique_index_tenant_medicaid_id | TC-10.1 |
+| tests/db/test_schema.py | test_schema_user_unique_indexes_and_primary_key | TC-10.2 |
+| tests/db/test_schema.py | test_schema_attendance_unique_index_tenant_participant_date | TC-10.3 |
+| tests/db/test_schema.py | test_schema_claim_unique_indexes_reference_and_composite | TC-10.4 |
+| tests/db/test_schema.py | test_schema_mar_record_unique_index_participant_medication_time | TC-10.5 |
+| tests/db/test_schema.py | test_schema_not_null_constraints_on_all_mandatory_fields | TC-10.6 |
+| tests/db/test_schema.py | test_schema_version_column_present_on_all_entity_tables | TC-10.7 |
+| tests/db/test_schema.py | test_schema_is_deleted_defaults_false_on_participant_and_user | TC-10.8 |

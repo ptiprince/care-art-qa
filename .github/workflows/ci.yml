@@ -48,6 +48,16 @@ jobs:
             tests/test_incident.py::test_tc_6_3_physician_cannot_create_incident \
             tests/test_incident.py::test_tc_6_5_billing_specialist_read_sud_incident_denied_with_audit \
             tests/test_incident.py::test_tc_6_8_closed_incident_is_immutable \
+            tests/test_audit_log.py::test_tc_7_1_audit_mandatory_fields_present_on_participant_write \
+            tests/test_audit_log.py::test_tc_7_2_unauthorized_role_denied_write_phi_resource_access_denied_audit_logged \
+            tests/test_rbac_sweep.py::test_tc_8_5_physician_denied_write_on_participant_endpoint \
+            tests/test_rbac_sweep.py::test_tc_8_6_physician_denied_write_on_user_endpoint \
+            tests/test_rbac_sweep.py::test_tc_8_7_physician_denied_write_on_attendance_endpoint \
+            tests/test_rbac_sweep.py::test_tc_8_8_physician_denied_write_on_claim_endpoint \
+            tests/test_rbac_sweep.py::test_tc_8_9_physician_denied_write_on_mar_record_endpoint \
+            tests/test_rbac_sweep.py::test_tc_8_10_physician_denied_write_on_incident_endpoint \
+            tests/test_rbac_sweep.py::test_tc_8_11_participant_family_denied_all_staff_entity_endpoints \
+            tests/test_tenant_isolation.py::test_tc_9_1_participant_not_accessible_from_other_tenant \
             tests/db/test_schema.py \
             -v
 
