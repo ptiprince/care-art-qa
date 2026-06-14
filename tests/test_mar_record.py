@@ -141,7 +141,7 @@ def test_tc_5_2_successful_mar_creation_audit_trail(
 
     # DB: created_by equals caller's user_id
     row_mar = db_session.execute(
-        text("SELECT created_by, status, version FROM mar_record WHERE mar_id = :mid"),
+        text("SELECT created_by, status, version, is_deleted FROM mar_record WHERE mar_id = :mid"),
         {"mid": mar_id},
     ).fetchone()
     assert row_mar is not None, f"MAR {mar_id} not found in DB"
@@ -150,6 +150,7 @@ def test_tc_5_2_successful_mar_creation_audit_trail(
     )
     assert row_mar.status == "administered"
     assert row_mar.version == 1
+    assert not row_mar.is_deleted
 
     # Audit: PHI_WRITE entry with all 11 mandatory fields
     aud_rows = db_session.execute(
@@ -821,7 +822,7 @@ def test_tc_5_19_correction_mar_with_valid_fields_succeeds(
 
     row = db_session.execute(
         text(
-            "SELECT is_correction, original_mar_id, notes, status "
+            "SELECT is_correction, original_mar_id, notes, status, is_deleted "
             "FROM mar_record WHERE mar_id = :mid"
         ),
         {"mid": correction_mar_id},
@@ -833,6 +834,7 @@ def test_tc_5_19_correction_mar_with_valid_fields_succeeds(
     )
     assert row.notes == long_notes
     assert row.status == "missed"
+    assert not row.is_deleted
 
 
 # ─── TC-5.20 ─────────────────────────────────────────────────────────────────

@@ -237,6 +237,7 @@ class Attendance(Base):
     created_by = Column(String(36))
     updated_by = Column(String(36))
     version = Column(Integer, default=1, nullable=False)
+    is_deleted = Column(Boolean, default=False, server_default=text("0"), nullable=False)
 
 
 class Claim(Base):
@@ -270,6 +271,7 @@ class Claim(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     updated_by = Column(String(36))
     version = Column(Integer, default=1, nullable=False)
+    is_deleted = Column(Boolean, default=False, server_default=text("0"), nullable=False)
 
 
 class MARRecord(Base):
@@ -300,6 +302,7 @@ class MARRecord(Base):
     created_by = Column(String(36))
     updated_by = Column(String(36))
     version = Column(Integer, default=1, nullable=False)
+    is_deleted = Column(Boolean, default=False, server_default=text("0"), nullable=False)
 
 
 class Incident(Base):
@@ -325,6 +328,7 @@ class Incident(Base):
     created_by = Column(String(36))
     updated_by = Column(String(36))
     version = Column(Integer, default=1, nullable=False)
+    is_deleted = Column(Boolean, default=False, server_default=text("0"), nullable=False)
 
 
 class AuditLog(Base):
@@ -527,6 +531,7 @@ class AttendanceResponse(_ORM):
     created_by: Optional[str] = None
     updated_by: Optional[str] = None
     version: int
+    is_deleted: bool
 
 
 # Claim ────────────────────────────────────────────────────────────────────────
@@ -568,6 +573,7 @@ class ClaimResponse(_ORM):
     updated_at: datetime
     updated_by: Optional[str] = None
     version: int
+    is_deleted: bool
 
 
 # MARRecord ────────────────────────────────────────────────────────────────────
@@ -609,6 +615,7 @@ class MARRecordResponse(_ORM):
     created_by: Optional[str] = None
     updated_by: Optional[str] = None
     version: int
+    is_deleted: bool
 
 
 # Incident ─────────────────────────────────────────────────────────────────────
@@ -650,6 +657,7 @@ class IncidentResponse(_ORM):
     created_by: Optional[str] = None
     updated_by: Optional[str] = None
     version: int
+    is_deleted: bool
 
 
 # ─── PATCH request bodies ─────────────────────────────────────────────────────

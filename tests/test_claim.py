@@ -361,6 +361,21 @@ def test_tc_4_5_attendance_status_validation_and_confirmed_creates_claim(
         f"Expected attendance status='billed' after claim creation, got '{row_att.status}'"
     )
 
+    # Step 7: DB — claim row has correct initial state
+    claim_id = body["claim_id"]
+    row_claim = db_session.execute(
+        text("SELECT claim_id, claim_status, version, is_deleted FROM claim WHERE claim_id = :cid"),
+        {"cid": claim_id},
+    ).fetchone()
+    assert row_claim is not None, f"Claim {claim_id} not found in DB"
+    assert row_claim.claim_status == "draft", (
+        f"Expected claim_status='draft', got '{row_claim.claim_status}'"
+    )
+    assert row_claim.version == 1, (
+        f"Expected version=1, got {row_claim.version}"
+    )
+    assert not row_claim.is_deleted
+
 
 # ─── TC-4.6 ──────────────────────────────────────────────────────────────────
 
@@ -400,13 +415,14 @@ def test_tc_4_6_multi_attendance_units_billed_sum_and_not_found(
 
     # Step 3: DB — units_billed persisted as 18.0
     row_claim = db_session.execute(
-        text("SELECT units_billed FROM claim WHERE claim_id = :cid"),
+        text("SELECT units_billed, is_deleted FROM claim WHERE claim_id = :cid"),
         {"cid": claim_id},
     ).fetchone()
     assert row_claim is not None, f"Claim {claim_id} not found in DB"
     assert float(row_claim.units_billed) == 18.0, (
         f"Expected DB units_billed=18.0, got {row_claim.units_billed}"
     )
+    assert not row_claim.is_deleted
 
     # Step 4: DB — all three attendances are billed
     for att_id in ids:
@@ -684,13 +700,14 @@ def test_tc_4_9_empty_attendance_ids_and_server_calculated_units_billed(
 
     # DB: persisted value is also 4.0
     row = db_session.execute(
-        text("SELECT units_billed FROM claim WHERE claim_id = :cid"),
+        text("SELECT units_billed, is_deleted FROM claim WHERE claim_id = :cid"),
         {"cid": body["claim_id"]},
     ).fetchone()
     assert row is not None, f"Claim {body['claim_id']} not found in DB"
     assert float(row.units_billed) == 4.0, (
         f"Expected DB units_billed=4.0, got {row.units_billed}"
     )
+    assert not row.is_deleted
 
 
 # ─── TC-4.10 ─────────────────────────────────────────────────────────────────

@@ -157,14 +157,14 @@ def test_schema_not_null_constraints_on_all_mandatory_fields(schema_conn):
                         "program_status", "is_deleted", "version"],
         "user": ["tenant_id", "first_name", "last_name", "email", "role",
                  "status", "version", "mfa_enabled", "failed_login_count"],
-        "attendance": ["tenant_id", "participant_id", "date_of_service", "status", "version"],
+        "attendance": ["tenant_id", "participant_id", "date_of_service", "status", "version", "is_deleted"],
         "claim": ["tenant_id", "participant_id", "attendance_ids", "payer_type",
                   "claim_reference_number", "procedure_code", "date_of_service_start",
-                  "claim_status", "version"],
+                  "claim_status", "version", "is_deleted"],
         "mar_record": ["tenant_id", "participant_id", "medication_name", "administered_by",
-                       "scheduled_time", "status", "is_controlled_substance", "version"],
+                       "scheduled_time", "status", "is_controlled_substance", "version", "is_deleted"],
         "incident": ["tenant_id", "participant_id", "incident_date", "incident_type",
-                     "description", "severity", "status", "is_sud_related", "version"],
+                     "description", "severity", "status", "is_sud_related", "version", "is_deleted"],
     }
 
     for table, fields in mandatory.items():
@@ -191,7 +191,7 @@ def test_schema_version_column_present_on_all_entity_tables(schema_conn):
 
 def test_schema_is_deleted_defaults_false_on_participant_and_user(schema_conn):
     """is_deleted column has DEFAULT false on participant and user tables; no row has null is_deleted."""
-    for table in ("participant",):
+    for table in ("participant", "attendance", "claim", "mar_record", "incident"):
         columns = _get_columns(schema_conn, table)
         assert "is_deleted" in columns, f"is_deleted not found in {table}"
         dflt = columns["is_deleted"]["dflt_value"]
@@ -199,7 +199,7 @@ def test_schema_is_deleted_defaults_false_on_participant_and_user(schema_conn):
             f"is_deleted in {table} has unexpected default: {dflt!r}"
 
     # Confirm no existing rows have NULL is_deleted
-    for table in ("participant",):
+    for table in ("participant", "attendance", "claim", "mar_record", "incident"):
         null_count = schema_conn.execute(
             text(f"SELECT COUNT(*) FROM {table} WHERE is_deleted IS NULL")
         ).scalar()

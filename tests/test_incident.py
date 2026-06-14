@@ -117,7 +117,7 @@ def test_tc_6_1_successful_incident_creation_audit_trail(
     # DB: record persisted correctly
     row_inc = db_session.execute(
         text(
-            "SELECT status, severity, created_by, version "
+            "SELECT status, severity, created_by, version, is_deleted "
             "FROM incident WHERE incident_id = :iid"
         ),
         {"iid": incident_id},
@@ -127,6 +127,7 @@ def test_tc_6_1_successful_incident_creation_audit_trail(
     assert row_inc.severity == "minor"
     assert row_inc.created_by == ADMIN_ID
     assert row_inc.version == 1
+    assert not row_inc.is_deleted
 
     # Audit: PHI_WRITE with all 11 mandatory fields
     aud_rows = db_session.execute(
@@ -211,22 +212,24 @@ def test_tc_6_2_admin_and_coordinator_can_create_incident(
 
     # DB: created_by matches respective caller
     row_admin = db_session.execute(
-        text("SELECT created_by FROM incident WHERE incident_id = :iid"),
+        text("SELECT created_by, is_deleted FROM incident WHERE incident_id = :iid"),
         {"iid": inc_admin_id},
     ).fetchone()
     assert row_admin is not None
     assert row_admin.created_by == ADMIN_ID, (
         f"Expected created_by='{ADMIN_ID}', got '{row_admin.created_by}'"
     )
+    assert not row_admin.is_deleted
 
     row_coord = db_session.execute(
-        text("SELECT created_by FROM incident WHERE incident_id = :iid"),
+        text("SELECT created_by, is_deleted FROM incident WHERE incident_id = :iid"),
         {"iid": inc_coord_id},
     ).fetchone()
     assert row_coord is not None
     assert row_coord.created_by == COORDINATOR_ID, (
         f"Expected created_by='{COORDINATOR_ID}', got '{row_coord.created_by}'"
     )
+    assert not row_coord.is_deleted
 
 
 # ─── TC-6.3 ──────────────────────────────────────────────────────────────────

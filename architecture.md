@@ -182,16 +182,12 @@ Every audit event, regardless of originating layer, must include:
 
 ---
 
-*Next section pending approval: **3. Module Requirements***
-
----
-
 ## 3. Core Data Model
 
 > **Approach:** Entities are defined one at a time with client approval before proceeding. Each entity specifies field name, data type, PHI classification, and storage/handling rules.
 
 > **Phased scope:**
-> **Phase 1** covers the minimum entities needed to support mock backend development and initial test coverage: Participant (already defined), User, Attendance, Claim, MARRecord, and Incident. **Phase 2** will add: CarePlan, Appointment, MedicationRefill, and Reminder. This phased approach keeps the mock backend simple while covering the highest-risk regulatory flows first.
+> **Phase 1** covers the minimum entities needed to support mock backend development and initial test coverage: Participant (already defined), User, Attendance, Claim, MARRecord, and Incident. **Phase 2** will add: CarePlan, Appointment, MedicationRefill, Reminder, and Consent. This phased approach keeps the mock backend simple while covering the highest-risk regulatory flows first.
 
 ### PHI Classification Key
 
@@ -479,6 +475,7 @@ The Attendance entity records a single day of service for one participant — th
 | `created_by` | UUID (FK → User) | Non-PHI | |
 | `updated_by` | UUID (FK → User) | Non-PHI | |
 | `version` | INTEGER | Non-PHI | Optimistic locking; any edit to a `confirmed` record resets status to `pending` and requires re-confirmation |
+| `is_deleted` | BOOLEAN | Non-PHI | Soft delete only; HIPAA prohibits permanent deletion within retention period |
 
 ---
 
@@ -571,6 +568,7 @@ The Claim entity is the formal billing artifact submitted to a payer (Medicaid o
 | `updated_at` | TIMESTAMPTZ | Non-PHI | UTC |
 | `updated_by` | UUID (FK → User) | Non-PHI | |
 | `version` | INTEGER | Non-PHI | Optimistic locking; a submitted or paid claim cannot be updated — only voided and resubmitted |
+| `is_deleted` | BOOLEAN | Non-PHI | Soft delete only; HIPAA prohibits permanent deletion within retention period |
 
 ---
 
@@ -662,6 +660,7 @@ The MARRecord entity captures each individual instance of a medication being adm
 | `created_by` | UUID (FK → User) | Non-PHI | Must match `administered_by` in normal workflows; a supervisor override creates a separate audit event |
 | `updated_by` | UUID (FK → User) | Non-PHI | |
 | `version` | INTEGER | Non-PHI | Optimistic locking; an `administered` record may not be edited — only a correction record may be appended with reference to the original `mar_id` |
+| `is_deleted` | BOOLEAN | Non-PHI | Soft delete only; HIPAA prohibits permanent deletion within retention period |
 
 ---
 
@@ -775,6 +774,7 @@ The Incident entity records a reportable event involving a participant — a fal
 | `created_by` | UUID (FK → User) | Non-PHI | |
 | `updated_by` | UUID (FK → User) | Non-PHI | |
 | `version` | INTEGER | Non-PHI | Optimistic locking; a `closed` incident cannot be edited — a new incident or addendum must be created |
+| `is_deleted` | BOOLEAN | Non-PHI | Soft delete only; HIPAA prohibits permanent deletion within retention period |
 
 ---
 
@@ -860,7 +860,841 @@ All six Phase 1 entities are now defined. The table below summarizes the entity 
 - PHI fields encrypted at rest (AES-256, field-level) across all entities
 - 42 CFR Part 2 flag present on Participant (`is_sud_record`), MARRecord (`is_controlled_substance`), and Incident (`is_sud_related`) — evaluated independently and combined for strictest controls
 
-**Phase 2 entities to be defined:** CarePlan, Appointment, MedicationRefill, Reminder.
+**Phase 2 entities to be defined:** CarePlan, Appointment, MedicationRefill, Reminder, Consent.
+
+---
+
+### 3.8 CarePlan
+
+The CarePlan entity represents an individualized, structured plan of care created for a participant by a care coordinator and signed by the attending physician before it may be activated. Each plan documents clinical goals, functional targets, and therapeutic interventions required to support the participant's health and program engagement. A participant has at most one active care plan at a time; when a plan is revised, the prior version is superseded and retained as an immutable historical record. Care plans snapshot the participant's current diagnosis codes and functional level at authorship time, serve as the clinical foundation for MAR administration goals, and are exchanged with physician EHR systems as FHIR CarePlan resources. This entity is the primary artifact of the Care Plan Management module (Section 1.2, module 3).
+
+> **Phase 2 scope:** core plan fields, goal tracking, physician order integration, and FHIR resource linkage. Care team member assignments beyond the primary care coordinator, individual goal progress audit rows, and Reminder module integration for goal-based alerts are deferred to Phase 3.
+
+#### 3.8.1 Core Reference
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `care_plan_id` | UUID (PK) | Non-PHI | System-generated; never user-supplied |
+| `tenant_id` | UUID (FK → Tenant) | Non-PHI | Row-level tenant isolation; all queries must filter by this |
+| `participant_id` | UUID (FK → Participant) | Clinical PHI | Central link to the Participant record; care plan inherits `is_sud_record` from Participant for 42 CFR Part 2 gate (see 3.8.9) |
+
+#### 3.8.2 Plan Identity & Versioning
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `version_number` | INTEGER | Non-PHI | Plan revision number within this participant's history; starts at 1 on first plan creation, incremented on each full revision; distinct from the `version` field used for optimistic locking |
+| `status` | ENUM (`draft`, `active`, `superseded`, `archived`) | Non-PHI | State machine enforced at application layer: `draft` → `active` (requires non-null `physician_signature_date`); `active` → `superseded` (when a new version is activated); `archived` is a terminal state for plans withdrawn without revision; at most one `active` plan is permitted per participant per tenant at any time (see 3.8.8) |
+| `effective_date` | DATE | **Direct Identifier** | Date the plan takes effect clinically; HIPAA date identifier; must be non-null before `status` may transition to `active`; encrypted at rest |
+| `review_date` | DATE | **Direct Identifier** | Scheduled date for plan review by the care coordinator and physician; HIPAA date identifier; encrypted at rest |
+| `expiration_date` | DATE | **Direct Identifier** | Nullable; date after which the plan is no longer clinically valid without renewal; HIPAA date identifier; encrypted at rest; if null, plan remains in force until explicitly superseded or archived |
+
+#### 3.8.3 Clinical Context
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `primary_diagnosis_code` | VARCHAR(10) | Clinical PHI | ICD-10-CM code; snapshotted from `Participant.primary_diagnosis_code` at plan creation; may be refined on the plan without updating the Participant record; changes to the Participant field after plan activation do not propagate to this field |
+| `secondary_diagnosis_codes` | JSONB | Clinical PHI | Array of ICD-10-CM codes; nullable; snapshotted from `Participant.secondary_diagnosis_codes` at plan creation |
+| `functional_level` | ENUM (`independent`, `supervised`, `assisted`, `dependent`) | Clinical PHI | Participant's functional level at the time the plan is authored; snapshotted from `Participant.functional_level`; does not auto-update if the Participant record changes — a changed functional level requires a plan revision |
+| `notes` | TEXT | Clinical PHI | Free-text clinical narrative; encrypted at rest; nullable; may include care rationale, clinical observations, and contraindications; PHI values must never appear in audit log payloads |
+
+#### 3.8.4 Goals — `care_plan_goal` Table
+
+Goals are defined in a separate `care_plan_goal` table rather than a JSONB column on `care_plan`. This gives db_validator the ability to assert individual goal fields via SQL and aligns with the column-per-field pattern used by all Phase 1 entities. Each goal row belongs to exactly one care plan and is identified by its own UUID primary key.
+
+**`care_plan_goal` — Core Reference**
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `goal_id` | UUID (PK) | Non-PHI | System-generated; never user-supplied |
+| `care_plan_id` | UUID (FK → care_plan) | Non-PHI | Parent care plan; a goal may not exist without a parent; cascade-deleted if the parent plan is hard-deleted (soft delete is preferred — see audit note below) |
+| `tenant_id` | UUID (FK → Tenant) | Non-PHI | Row-level tenant isolation; all queries must filter by this; must match the `tenant_id` on the parent `care_plan` row |
+
+**`care_plan_goal` — Goal Definition**
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `domain` | ENUM (`functional`, `clinical`, `social`, `behavioral`) | Clinical PHI | Category of the goal; drives care coordinator workflow and reporting |
+| `description` | TEXT | Clinical PHI | Narrative statement of the goal, e.g., `"Walk 50 feet unassisted by review date"`; encrypted at rest; required; PHI values must never appear in audit log payloads |
+| `target_metric` | TEXT | Clinical PHI | Nullable; measurable target for goal achievement, e.g., `"Blood pressure < 130/80 mmHg"` or `"≥ 3 days per week attendance"`; encrypted at rest |
+| `target_date` | DATE | **Direct Identifier** | Nullable; date by which the goal is expected to be achieved; HIPAA date identifier; encrypted at rest |
+| `status` | ENUM (`not_started`, `in_progress`, `achieved`, `discontinued`) | Clinical PHI | Reflects the participant's current progress toward this goal; updated by the care coordinator as part of plan review; `discontinued` requires a note on the parent care plan |
+
+**`care_plan_goal` — Audit Metadata**
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `created_at` | TIMESTAMPTZ | Non-PHI | UTC |
+| `updated_at` | TIMESTAMPTZ | Non-PHI | UTC |
+| `created_by` | UUID (FK → User) | Non-PHI | User who created this goal entry; typically `care_coordinator` |
+| `updated_by` | UUID (FK → User) | Non-PHI | Last user to modify this goal entry |
+| `version` | INTEGER | Non-PHI | Optimistic locking; incremented on every write to this goal row |
+
+> **Soft delete note:** Goal rows inherit the soft-delete policy of the parent care plan. A `care_plan_goal` row is never hard-deleted within the HIPAA retention period. If a goal is removed during a plan revision, the prior plan version (including its goal rows) is retained as `superseded`; the new plan version carries its own goal rows.
+
+#### 3.8.5 Physician Order Integration
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `physician_id` | UUID (FK → Provider) | Clinical PHI | Ordering and signing physician; must resolve to a User with `role = physician`; required — a care plan with a null `physician_id` cannot transition to `active` |
+| `physician_signature_date` | DATE | **Direct Identifier** | Date the physician reviewed and signed the care plan; HIPAA date identifier; nullable until signed; encrypted at rest; plan is blocked from `active` transition while this field is null |
+| `physician_order_reference` | VARCHAR(100) | Non-PHI | External reference to the physician's originating order, e.g., an EHR order ID or FHIR Task resource ID; nullable; not encrypted — this is a non-PHI system identifier |
+| `fhir_care_plan_id` | VARCHAR(100) | Non-PHI | FHIR CarePlan resource ID generated for exchange with physician EHR systems via HL7 FHIR R4; nullable until the FHIR resource is created on plan activation; not encrypted — public FHIR resource identifier |
+| `care_coordinator_id` | UUID (FK → User) | Non-PHI | Care coordinator who authored and is clinically responsible for this plan; must resolve to a User with `role = care_coordinator`; immutable after plan reaches `active` — a coordinator change requires a plan revision |
+
+#### 3.8.6 Audit Metadata
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `created_at` | TIMESTAMPTZ | Non-PHI | UTC |
+| `updated_at` | TIMESTAMPTZ | Non-PHI | UTC |
+| `created_by` | UUID (FK → User) | Non-PHI | User who created the plan draft; typically `care_coordinator` |
+| `updated_by` | UUID (FK → User) | Non-PHI | Last user to modify the record |
+| `version` | INTEGER | Non-PHI | Optimistic locking; incremented on every write; an `active` plan may have `review_date` and `notes` updated in place; any change to `primary_diagnosis_code`, `secondary_diagnosis_codes`, or `functional_level` requires a full plan revision (new `version_number`, prior plan transitioned to `superseded`) |
+| `is_deleted` | BOOLEAN | Non-PHI | Soft delete only; HIPAA prohibits permanent deletion within retention period; a soft-deleted care plan remains queryable by `compliance_officer` via the audit interface |
+
+---
+
+#### 3.8.7 Relationships to Other Entities
+
+| Entity | Relationship | Cardinality | Key Link | Notes |
+|---|---|---|---|---|
+| **Participant** | A participant has one active care plan at a time; all historical versions are retained | Many → 1 (per active); 1 → Many (all versions) | `care_plan.participant_id` | Care plan snapshots `primary_diagnosis_code`, `secondary_diagnosis_codes`, and `functional_level` from Participant at creation; inherits `is_sud_record` for Part 2 access gate (see 3.8.9) |
+| **User (care_coordinator)** | Each care plan is authored and managed by one care coordinator | Many → 1 | `care_plan.care_coordinator_id` | Must resolve to `role = care_coordinator`; coordinator is responsible for drafting, reviewing, and revising the plan |
+| **User (physician)** | Each active care plan requires a physician signature; the physician is the ordering provider | Many → 1 | `care_plan.physician_id` | Must resolve to `role = physician`; FHIR CarePlan resource is generated for exchange with the physician's EHR system on plan activation |
+| **care_plan_goal** | A care plan has one or more goals; each goal row belongs to exactly one care plan | 1 → Many | `care_plan_goal.care_plan_id` | Normalized table enabling db_validator to assert `domain`, `status`, `target_date`, and all other fields individually via SQL; goals are created and managed through the care plan service; `tenant_id` on every goal row must match the parent care plan |
+| **MARRecord** | MAR records share a participant with the active care plan; care plan goals may specify medication administration context | Indirect | `mar_record.participant_id` / `care_plan.participant_id` | No direct FK from MARRecord to CarePlan in Phase 2; medication goals in `care_plan_goal` inform MAR entries at the workflow level, not via a database constraint |
+| **Incident** | An incident involving a participant may trigger a care plan revision; no direct FK relationship | Indirect | `incident.participant_id` / `care_plan.participant_id` | A care plan revision prompted by an incident is captured via a new `version_number` and `notes`; the incident that prompted the revision may be referenced in `notes` by `incident_id` |
+| **Appointment** | Physician appointments may produce care plan orders; the signing physician is shared across both entities | Indirect | `care_plan.physician_id` / `appointment.physician_id` | FHIR Appointment and FHIR CarePlan resources may be generated from the same physician interaction; linked at the FHIR integration layer, not via a database FK in Phase 2 |
+
+---
+
+#### 3.8.8 Unique Constraints
+
+| Constraint | Fields | Scope | Behavior on Violation |
+|---|---|---|---|
+| `uq_care_plan_participant_version` | `tenant_id`, `participant_id`, `version_number` | Per tenant | Return HTTP 409 with error code `CARE_PLAN_DUPLICATE_VERSION`; version numbering logic must guarantee monotonic increment |
+| `uq_care_plan_participant_active` | `tenant_id`, `participant_id` WHERE `status = 'active'` | Per tenant (partial index) | Return HTTP 409 with error code `CARE_PLAN_ALREADY_ACTIVE`; the revision workflow must transition the current active plan to `superseded` before the new version is activated |
+| `uq_care_plan_goal_domain_description` | `tenant_id`, `care_plan_id`, `domain`, `description` | Per care plan | Return HTTP 409 with error code `CARE_PLAN_GOAL_DUPLICATE`; do not create a second goal row |
+
+**Rules:**
+- `version_number` must be unique per participant per tenant. The application reads the participant's maximum existing `version_number` and increments it immediately before insert. A collision indicates a concurrency race; the application retries once with re-read of the maximum; if the second attempt also collides, `409 Conflict` with `CARE_PLAN_DUPLICATE_VERSION` is returned and the operator is notified.
+- At most one `active` plan is permitted per participant per tenant at any time. Before transitioning a draft plan to `active`, the application must find any existing `active` plan for the same participant and update it to `superseded` within the same database transaction. An activation attempt when an `active` plan exists and no supersession is performed returns `409 Conflict` with `CARE_PLAN_ALREADY_ACTIVE`.
+- A plan cannot transition to `active` while `physician_signature_date` is null or `physician_id` is null. This pre-activation check is enforced at the application service layer with `422 Unprocessable Entity` and error code `CARE_PLAN_UNSIGNED`, independently of the database constraints.
+- Within a single care plan, a goal with an identical `domain` and `description` is always a duplicate entry. A second goal row with the same `care_plan_id`, `domain`, and `description` must be rejected at the application layer before reaching the database, with the database enforcing the same constraint as a backstop. The constraint is scoped to `care_plan_id`, not to the participant: the same `domain` and `description` combination may appear on a different care plan, including a newer version of the same participant's plan, because each plan version is an independent clinical record with its own goal set.
+
+**Implementation:**
+- Database: `UNIQUE (tenant_id, participant_id, version_number)` index on the `care_plan` table; partial unique index `UNIQUE (tenant_id, participant_id) WHERE status = 'active'` to enforce the single-active-plan constraint at the database layer as a backstop; `UNIQUE (tenant_id, care_plan_id, domain, description)` index on the `care_plan_goal` table
+- Application: pre-activation check verifies `physician_id` is non-null and `physician_signature_date` is non-null; supersession of any existing `active` plan and activation of the new plan execute in a single atomic transaction; pre-insert existence check on `(care_plan_id, domain, description)` returns `409 Conflict` with error code `CARE_PLAN_GOAL_DUPLICATE` before a duplicate goal insert is attempted
+- Error message for `CARE_PLAN_ALREADY_ACTIVE`: `"This participant already has an active care plan. The current plan must be superseded before a new one can be activated."`
+- Error message for `CARE_PLAN_UNSIGNED`: `"A care plan cannot be activated without a physician signature date."`
+- Error message for `CARE_PLAN_DUPLICATE_VERSION`: `"A care plan with this version number already exists for this participant."`
+- Error message for `CARE_PLAN_GOAL_DUPLICATE`: `"A goal with this domain and description already exists on this care plan."`
+
+**Test case targets:**
+- Attempt to POST a second care plan for the same participant with an identical `version_number` → assert `409` with `CARE_PLAN_DUPLICATE_VERSION`
+- Attempt to activate a draft plan when the participant already has an `active` plan without first superseding it → assert `409` with `CARE_PLAN_ALREADY_ACTIVE`
+- Attempt to activate a plan where `physician_signature_date` is null → assert `422` with `CARE_PLAN_UNSIGNED`
+- Execute the full revision workflow: create new draft version, set `physician_signature_date`, activate → assert prior plan `status = superseded` and new plan `status = active` in a single transaction
+- Confirm that a superseded plan is immutable: attempt to PATCH a `superseded` plan → assert `409` or `422`
+- Attempt to POST a second `care_plan_goal` row with the same `care_plan_id`, `domain`, and `description` as an existing goal → assert `409` with `CARE_PLAN_GOAL_DUPLICATE`
+- Confirm that the same `domain` and `description` combination is accepted on a different `care_plan_id`, including a superseded version of the same participant's plan
+
+---
+
+#### 3.8.9 42 CFR Part 2 Compliance Note
+
+When `Participant.is_sud_record = true`, all CarePlan and `care_plan_goal` records for that participant are subject to 42 CFR Part 2 access controls, consistent with the controls applied to MARRecord (3.5.8) and Incident (3.6.9). The CarePlan entity carries no independent Part 2 flag — the control is derived entirely from `Participant.is_sud_record`, which the application service must read on every care plan and goal access.
+
+**Access restriction:**
+- Read and write access to care plans and their goals for SUD-flagged participants is limited to `care_coordinator`, `nurse_medication_aide`, and `compliance_officer` roles
+- `Participant.is_sud_record` is evaluated at the application service layer on every care plan read and write — it is not sufficient to enforce this at the API Gateway, because `is_sud_record` is itself a Part 2-protected field that must not be exposed to the gateway layer
+- API responses for unauthorized role requests return `403 Forbidden` with no indication of the care plan's existence
+- The `care_plan_goal` rows and the `notes` field are redacted from list-view responses for unauthorized roles even when the participant's non-clinical fields are otherwise accessible
+
+**Audit logging requirement:**
+- Every read on a care plan or goal where `Participant.is_sud_record = true` must be captured in the audit log with: `user_id`, `tenant_id`, `care_plan_id`, action type `PHI_READ`, timestamp, and outcome — before the response is returned to the caller
+- Every write must be logged with action type `PHI_WRITE` and `data_affected` listing field names changed (never field values)
+- Failed access attempts are logged with `ACCESS_DENIED`
+
+**External disclosure:**
+- No CarePlan or `care_plan_goal` for a participant where `is_sud_record = true` may be transmitted externally — including via FHIR CarePlan exchange with physician EHR systems — without explicit patient consent documented in the system, consistent with 42 CFR Part 2 §2.31. The FHIR outbound adapter must verify that a valid consent record exists before generating or transmitting the FHIR CarePlan resource. A missing consent record blocks the FHIR transmission and emits a `CONSENT_CHECK` audit event with outcome `DENIED`.
+
+---
+
+> **Pending approval before proceeding to 3.9 Appointment.**
+
+---
+
+### 3.9 Appointment
+
+The Appointment entity records a scheduled clinical encounter between a participant and a physician — an in-person visit, specialist referral, or telehealth session. Appointments are the scheduling artifact that drives physician order integration, generates FHIR Appointment resources for exchange with physician EHR systems, and produces the clinical context from which care plan orders and result documentation flow. Each appointment belongs to exactly one participant and one physician, is bounded by a defined time window, and transitions through a lifecycle from scheduled to completed, cancelled, or no_show. This entity supports the Physician Appointments module (Section 1.2, module 5).
+
+> **Phase 2 scope:** core scheduling fields, status lifecycle, clinical result documentation, and FHIR resource linkage. Referral tracking details, transport coordination, and participant-facing reminder integration are Phase 3.
+
+#### 3.9.1 Core Reference
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `appointment_id` | UUID (PK) | Non-PHI | System-generated; never user-supplied |
+| `tenant_id` | UUID (FK → Tenant) | Non-PHI | Row-level tenant isolation; all queries must filter by this |
+| `participant_id` | UUID (FK → Participant) | Clinical PHI | Central link to the Participant record; appointment inherits `is_sud_record` from Participant for 42 CFR Part 2 gate considerations |
+
+#### 3.9.2 Scheduling
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `physician_id` | UUID (FK → User) | Clinical PHI | Attending physician for this appointment; must resolve to a User with `role = physician`; required — an appointment cannot be created without a physician |
+| `scheduled_start` | TIMESTAMPTZ | **Direct Identifier** | Date and time the appointment is scheduled to begin; HIPAA date/time identifier; encrypted at rest; part of unique constraint (see 3.9.8) |
+| `scheduled_end` | TIMESTAMPTZ | **Direct Identifier** | Date and time the appointment is scheduled to end; HIPAA date/time identifier; encrypted at rest; must be strictly after `scheduled_start`; used in physician overlap check (see 3.9.8) |
+| `appointment_type` | ENUM (`routine`, `specialist_referral`, `urgent`, `telehealth`) | Clinical PHI | Nature of the clinical encounter; immutable once `status` reaches `completed` (see 3.9.8) |
+
+#### 3.9.3 Status & Workflow
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `status` | ENUM (`scheduled`, `completed`, `cancelled`, `no_show`) | Non-PHI | State machine enforced at application layer: `scheduled` → `completed` or `cancelled` or `no_show`; terminal states may not be reversed; a PATCH transitioning `status` to `cancelled` requires a non-empty `cancellation_reason` (see 3.9.8) |
+| `cancellation_reason` | VARCHAR(500) | Non-PHI | Nullable unless `status = 'cancelled'`; required and must be non-empty when `status` transitions to `cancelled`; a PATCH to `cancelled` without this field populated is rejected with `422` and error code `APPOINTMENT_MISSING_CANCELLATION_REASON` (see 3.9.8) |
+
+#### 3.9.4 Clinical Results
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `result_notes` | TEXT | Clinical PHI | Nullable; free-text clinical notes documenting the outcome of the appointment; encrypted at rest; may be added or updated after the appointment reaches `status = completed` — PATCH to this field on a completed appointment is permitted and increments `version` (see 3.9.8) |
+| `fhir_result_reference` | VARCHAR(100) | Non-PHI | Nullable; FHIR resource reference (e.g., `DiagnosticReport/dr_00456`) returned by the physician's EHR system after the encounter; set via FHIR R4 exchange; not encrypted — public FHIR resource identifier; may be added or updated on a completed appointment (see 3.9.8) |
+| `follow_up_required` | BOOLEAN | Clinical PHI | Nullable; set to `true` when the attending physician determines a follow-up appointment is clinically indicated; may be set or updated after the appointment reaches `status = completed` — PATCH to this field on a completed appointment is permitted and increments `version` (see 3.9.8) |
+
+#### 3.9.5 FHIR Integration
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `fhir_appointment_id` | VARCHAR(100) | Non-PHI | FHIR Appointment resource ID generated for exchange with the physician's EHR system via HL7 FHIR R4; nullable until the FHIR resource is created on appointment scheduling; not encrypted — public FHIR resource identifier |
+
+#### 3.9.6 Audit Metadata
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `created_at` | TIMESTAMPTZ | Non-PHI | UTC |
+| `updated_at` | TIMESTAMPTZ | Non-PHI | UTC; updated on every write |
+| `created_by` | UUID (FK → User) | Non-PHI | Staff user who created the appointment record; typically `care_coordinator` or `program_administrator` |
+| `updated_by` | UUID (FK → User) | Non-PHI | Last user to modify the record |
+| `version` | INTEGER | Non-PHI | Optimistic locking; incremented on every permitted write, including PATCH to `result_notes`, `fhir_result_reference`, or `follow_up_required` on a `completed` appointment (see 3.9.8); `scheduled_start`, `physician_id`, and `appointment_type` are immutable once `status = 'completed'` |
+| `is_deleted` | BOOLEAN | Non-PHI | Soft delete only; HIPAA prohibits permanent deletion within retention period |
+
+---
+
+#### 3.9.7 Relationships to Other Entities
+
+| Entity | Relationship | Cardinality | Key Link | Notes |
+|---|---|---|---|---|
+| **Participant** | A participant has zero or more appointments | 1 → Many | `appointment.participant_id` | Appointment inherits Part 2 considerations from `Participant.is_sud_record`; FHIR Appointment resource is generated per appointment record |
+| **User (physician)** | Each appointment is attended by one physician | Many → 1 | `appointment.physician_id` | Must resolve to `role = physician`; physician availability is enforced via overlap constraint (see 3.9.8); FHIR Appointment resource references the physician's NPI |
+| **CarePlan** | Physician appointments may produce care plan orders; the signing physician is shared across both entities | Indirect | `care_plan.physician_id` / `appointment.physician_id` | FHIR Appointment and FHIR CarePlan resources may be generated from the same physician interaction; linked at the FHIR integration layer, not via a database FK |
+| **MARRecord** | Appointment outcomes may inform medication administration goals; no direct FK | Indirect | `mar_record.participant_id` / `appointment.participant_id` | Clinical results documented in `result_notes` may prompt MAR updates at the workflow level |
+| **Reminder** | A participant or family member may receive appointment reminders; no direct FK in Phase 2 | Indirect | `reminder.participant_id` / `appointment.participant_id` | Reminder generation from appointment records is Phase 3 |
+
+---
+
+#### 3.9.8 Unique Constraints
+
+| Constraint | Fields | Scope | Behavior on Violation |
+|---|---|---|---|
+| `uq_appointment_participant_physician_scheduled_start` | `tenant_id`, `participant_id`, `physician_id`, `scheduled_start` | Per tenant | Return HTTP 409 with error code `APPOINTMENT_DUPLICATE`; do not create a second record |
+| `ck_appointment_physician_no_overlap` | `tenant_id`, `physician_id`, `scheduled_start` evaluated against existing `[scheduled_start, scheduled_end)` intervals | Per tenant, per physician | Return HTTP 409 with error code `APPOINTMENT_PHYSICIAN_OVERLAP`; evaluated on create and on any PATCH that changes `scheduled_start` or `physician_id`; rows with `status IN ('cancelled', 'no_show')` are excluded from the check |
+
+**Rules:**
+- `uq_appointment_participant_physician_scheduled_start` prevents two appointments for the same participant and physician at the identical start instant. This exact-match constraint is enforced at both the database and application layers but does not cover the case where a new appointment's start time falls within an existing appointment's window without matching the start exactly. The interval overlap rule below provides the broader guard.
+- `ck_appointment_physician_no_overlap` (interval overlap): A physician may not have two overlapping appointments within the same tenant. A create or reschedule is rejected when the new or updated `scheduled_start` satisfies `existing.scheduled_start <= new_scheduled_start < existing.scheduled_end` for any existing appointment with the same `physician_id` and `tenant_id`, where the existing appointment's `status` is not `cancelled` or `no_show`. The check runs on every POST and on every PATCH that modifies `scheduled_start` or `physician_id`; on PATCH the current record is excluded from the check by `appointment_id` to permit a reschedule that stays within its own existing window.
+- `APPOINTMENT_COMPLETED_IMMUTABLE`: An appointment whose `status` is `completed` is partially immutable. PATCH requests that include any of `scheduled_start`, `physician_id`, or `appointment_type` on a completed appointment are rejected with `422 Unprocessable Entity` and error code `APPOINTMENT_COMPLETED_IMMUTABLE` — these fields describe the encounter as it occurred and cannot be revised after the visit is recorded as complete. PATCH requests that change only `result_notes`, `fhir_result_reference`, or `follow_up_required` on a completed appointment are accepted; the response is `200 OK` with `version` incremented. A PATCH body that mixes immutable and mutable fields is rejected as a whole with `422` — the caller must separate the writes.
+- `APPOINTMENT_MISSING_CANCELLATION_REASON`: A PATCH that transitions `status` to `cancelled` must supply a non-empty `cancellation_reason`. A request with `status = 'cancelled'` and an absent or empty-string `cancellation_reason` is rejected with `422 Unprocessable Entity` and error code `APPOINTMENT_MISSING_CANCELLATION_REASON`. A request with `status = 'cancelled'` and a non-empty `cancellation_reason` is accepted; the database must confirm `status = 'cancelled'` and `cancellation_reason` persisted exactly as supplied.
+
+**Implementation:**
+- Database:
+  - `UNIQUE (tenant_id, participant_id, physician_id, scheduled_start)` index on the `appointment` table enforces the exact-match constraint as a backstop
+  - Two SQLite triggers enforce the interval overlap constraint at the database layer as a backstop against any write that bypasses the application layer:
+
+    ```sql
+    CREATE TRIGGER trg_appointment_physician_no_overlap_insert
+    BEFORE INSERT ON appointment
+    FOR EACH ROW
+    BEGIN
+      SELECT RAISE(ABORT, 'overlapping appointment for this physician')
+      WHERE EXISTS (
+        SELECT 1 FROM appointment
+        WHERE tenant_id    = NEW.tenant_id
+          AND physician_id = NEW.physician_id
+          AND status NOT IN ('cancelled', 'no_show')
+          AND scheduled_start < NEW.scheduled_end
+          AND scheduled_end   > NEW.scheduled_start
+      );
+    END;
+
+    CREATE TRIGGER trg_appointment_physician_no_overlap_update
+    BEFORE UPDATE ON appointment
+    FOR EACH ROW
+    BEGIN
+      SELECT RAISE(ABORT, 'overlapping appointment for this physician')
+      WHERE EXISTS (
+        SELECT 1 FROM appointment
+        WHERE tenant_id      = NEW.tenant_id
+          AND physician_id   = NEW.physician_id
+          AND status NOT IN ('cancelled', 'no_show')
+          AND scheduled_start < NEW.scheduled_end
+          AND scheduled_end   > NEW.scheduled_start
+          AND appointment_id != NEW.appointment_id
+      );
+    END;
+    ```
+
+    The INSERT trigger fires on every new row; the UPDATE trigger fires on every row modification and excludes the row being updated via `appointment_id != NEW.appointment_id` to permit reschedules that do not introduce an external overlap. Both triggers abort the transaction and surface the message `'overlapping appointment for this physician'` if a conflicting row is found; no partial write occurs.
+- Application:
+  - **Interval overlap check:** On every POST and on every PATCH that changes `scheduled_start` or `physician_id`, the service executes: `SELECT 1 FROM appointment WHERE tenant_id = :tenant_id AND physician_id = :physician_id AND status NOT IN ('cancelled', 'no_show') AND scheduled_start <= :new_scheduled_start AND scheduled_end > :new_scheduled_start AND appointment_id != :self_id LIMIT 1`. A non-empty result returns `409 Conflict` with `APPOINTMENT_PHYSICIAN_OVERLAP` before the write is attempted. On POST `:self_id` is `NULL` (no exclusion needed); on PATCH it is the `appointment_id` of the record being updated.
+  - **Completed-immutable check:** On every PATCH, the service reads the current `status`. If `status = 'completed'` and the request body contains any of `scheduled_start`, `physician_id`, or `appointment_type`, the service returns `422 Unprocessable Entity` with `APPOINTMENT_COMPLETED_IMMUTABLE` before the write is attempted. If the body contains only fields from `{result_notes, fhir_result_reference, follow_up_required}`, the write proceeds and `version` is incremented.
+  - **Cancellation-reason check:** On every PATCH, if `status = 'cancelled'` is present in the request body, the service validates that `cancellation_reason` is also present in the body and evaluates to a non-empty string after stripping whitespace. If the check fails, the service returns `422 Unprocessable Entity` with `APPOINTMENT_MISSING_CANCELLATION_REASON` before the write is attempted.
+- Error messages exposed to the client:
+  - `APPOINTMENT_DUPLICATE`: `"An appointment for this participant with this physician at the same start time already exists."`
+  - `APPOINTMENT_PHYSICIAN_OVERLAP`: `"This physician already has an appointment scheduled during the requested time slot."`
+  - `APPOINTMENT_COMPLETED_IMMUTABLE`: `"A completed appointment's scheduled time, physician, or type cannot be changed."`
+  - `APPOINTMENT_MISSING_CANCELLATION_REASON`: `"A cancellation reason is required when cancelling an appointment."`
+
+**Test case targets:**
+- POST a second appointment with the same `participant_id`, `physician_id`, and `scheduled_start` within the same tenant → assert `409` with `APPOINTMENT_DUPLICATE`
+- POST an appointment where `scheduled_start` falls strictly inside an existing active appointment's `[scheduled_start, scheduled_end)` window for the same `physician_id` and `tenant_id` → assert `409` with `APPOINTMENT_PHYSICIAN_OVERLAP`
+- POST an appointment where `scheduled_start` matches an existing appointment's `scheduled_end` exactly (boundary — no overlap) → assert `201 Created`
+- POST an appointment where `scheduled_start` falls within an existing `cancelled` appointment's window → assert `201 Created` (cancelled excluded from overlap check)
+- POST an appointment where `scheduled_start` falls within an existing `no_show` appointment's window → assert `201 Created` (no_show excluded from overlap check)
+- PATCH `scheduled_start` on an existing appointment so the new start overlaps a different active appointment for the same `physician_id` → assert `409` with `APPOINTMENT_PHYSICIAN_OVERLAP`
+- PATCH `physician_id` on an appointment to a physician who already has an active appointment whose window covers the current appointment's `scheduled_start` → assert `409` with `APPOINTMENT_PHYSICIAN_OVERLAP`
+- PATCH `scheduled_start` on an appointment to a new value that still lies within that same appointment's own original window (reschedule within gap — no external overlap) → assert `200` (self-exclusion works correctly)
+- PATCH `scheduled_start`, `physician_id`, or `appointment_type` on a `completed` appointment → assert `422` with `APPOINTMENT_COMPLETED_IMMUTABLE`
+- PATCH `result_notes` on a `completed` appointment → assert `200`; DB confirms `version` incremented and `status` remains `completed`
+- PATCH `fhir_result_reference` on a `completed` appointment → assert `200`; DB confirms `version` incremented
+- PATCH `follow_up_required` on a `completed` appointment → assert `200`; DB confirms `version` incremented
+- PATCH a body containing both `result_notes` and `scheduled_start` on a `completed` appointment → assert `422` with `APPOINTMENT_COMPLETED_IMMUTABLE` (mixed body rejected in full)
+- PATCH `status = 'cancelled'` with no `cancellation_reason` field → assert `422` with `APPOINTMENT_MISSING_CANCELLATION_REASON`
+- PATCH `status = 'cancelled'` with `cancellation_reason = ""` (empty string) → assert `422` with `APPOINTMENT_MISSING_CANCELLATION_REASON`
+- PATCH `status = 'cancelled'` with `cancellation_reason = "   "` (whitespace only) → assert `422` with `APPOINTMENT_MISSING_CANCELLATION_REASON`
+- PATCH `status = 'cancelled'` with a non-empty `cancellation_reason` → assert `200`; DB confirms `status = 'cancelled'` and `cancellation_reason` persisted exactly as supplied
+- Execute a direct SQL INSERT into the `appointment` table — bypassing the application layer entirely — for a `physician_id` and `tenant_id` that already has an active appointment whose `[scheduled_start, scheduled_end)` window covers the new row's `scheduled_start`; assert the database raises an `OperationalError` (or equivalent SQLite abort) with the message `'overlapping appointment for this physician'` and that no row is committed. Repeat for a direct SQL UPDATE that reschedules an existing appointment into an overlapping window and assert the same database-level rejection.
+
+---
+
+#### 3.9.9 42 CFR Part 2 Compliance Note
+
+When `Participant.is_sud_record = true`, all Appointment records for that participant are subject to 42 CFR Part 2 access controls, consistent with the controls applied to MARRecord (3.5.8), Incident (3.6.9), and CarePlan (3.8.9). The Appointment entity carries no independent Part 2 flag — the control is derived entirely from `Participant.is_sud_record`, which the application service must read on every appointment access.
+
+**Access restriction:**
+- Read and write access to appointments for SUD-flagged participants is limited to `care_coordinator`, `nurse_medication_aide`, and `compliance_officer` roles
+- `Participant.is_sud_record` is evaluated at the application service layer on every appointment read and write — it is not sufficient to enforce this at the API Gateway, because `is_sud_record` is itself a Part 2-protected field that must not be exposed to the gateway layer
+- API responses for unauthorized role requests return `403 Forbidden` with no indication of the appointment's existence
+- The `appointment_type`, `cancellation_reason`, `result_notes`, and `follow_up_required` fields are additionally redacted from list-view responses for unauthorized roles even when the participant's non-clinical fields are otherwise accessible
+
+**Audit logging requirement:**
+- Every read on an appointment where `Participant.is_sud_record = true` must be captured in the audit log with: `user_id`, `tenant_id`, `appointment_id`, action type `PHI_READ`, timestamp, and outcome — before the response is returned to the caller
+- Every write must be logged with action type `PHI_WRITE` and `data_affected` listing field names changed (never field values)
+- Failed access attempts are logged with `ACCESS_DENIED`
+
+**External disclosure:**
+- No Appointment record or `fhir_result_reference` for a participant where `is_sud_record = true` may be transmitted to a physician EHR system or any external party — including via FHIR Appointment or FHIR DiagnosticReport exchange — without explicit patient consent documented in the system, consistent with 42 CFR Part 2 §2.31. The FHIR outbound adapter must verify that a valid consent record exists before generating or transmitting the FHIR Appointment resource or any linked result reference. A missing consent record blocks the FHIR transmission and emits a `CONSENT_CHECK` audit event with outcome `DENIED`.
+
+---
+
+> **Pending approval before proceeding to 3.10 MedicationRefill.**
+
+---
+
+### 3.10 MedicationRefill
+
+The MedicationRefill entity records a request to refill a participant's prescription medication through a pharmacy. It is the operational artifact for the Medication Refill module (Section 1.2, module 8), tracking the full lifecycle from request initiation through pharmacy transmission, processing, and fulfillment. Each refill request is linked to a participant and a prescribing physician, transmitted to a designated pharmacy via HL7 FHIR R4 MedicationRequest or NCPDP SCRIPT (Section 2.4), and carries a controlled-substance flag that triggers 42 CFR Part 2 access controls and the pharmacy consent gate when the medication is a controlled substance associated with a substance use disorder record. Fulfilled refill records provide medication supply continuity for the participant's active MAR entries managed in the MARRecord entity.
+
+> **Phase 2 scope:** core request fields, pharmacy transmission status lifecycle, FHIR MedicationRequest and NCPDP SCRIPT integration, and 42 CFR Part 2 controls for controlled substance refills. Pharmacy claims linkage, formulary checks, and prior authorization workflows are Phase 3.
+
+#### 3.10.1 Core Reference
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `refill_id` | UUID (PK) | Non-PHI | System-generated; never user-supplied |
+| `tenant_id` | UUID (FK → Tenant) | Non-PHI | Row-level tenant isolation; all queries must filter by this |
+| `participant_id` | UUID (FK → Participant) | Clinical PHI | Central link to the Participant record; inherits `is_sud_record` from Participant for the combined 42 CFR Part 2 gate when `is_controlled_substance = true` (see 3.10.8) |
+
+#### 3.10.2 Request Details
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `medication_name` | VARCHAR(200) | Clinical PHI | Full medication name including strength, e.g., `Metformin 500mg`; encrypted at rest; should match `MARRecord.medication_name` for the same participant where the refill supports an active MAR entry — alignment is enforced at the workflow level, not via a database constraint |
+| `dose` | VARCHAR(100) | Clinical PHI | Human-readable dose expression, e.g., `1 tablet`, `5mL`, `10 units`; encrypted at rest |
+| `route` | ENUM (`oral`, `injection`, `topical`) | Clinical PHI | Route of administration; must match the corresponding MAR entry when the refill supports an active MARRecord |
+| `quantity_requested` | INTEGER | Clinical PHI | Number of units (tablets, doses, or vials) requested in the refill; must be a positive integer greater than or equal to 1 (see 3.10.7) |
+| `refills_requested` | SMALLINT | Clinical PHI | Number of refill authorizations requested; nullable; when null, interpreted as a single fill with no standing refill authorization |
+| `prescribing_physician_id` | UUID (FK → User) | Clinical PHI | Physician who holds the underlying prescription being refilled; must resolve to a User with `role = physician`; required — a refill request cannot be created without a prescribing physician |
+| `is_controlled_substance` | BOOLEAN | **42 CFR Part 2** | When `true`, this refill request is for a controlled substance and is subject to elevated access controls and the pharmacy consent gate (see 3.10.8); the flag itself is Part 2-protected and must not appear in non-privileged API responses or audit log payloads; mirrors the same flag on MARRecord (3.5.4) |
+
+#### 3.10.3 Status & Workflow
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `status` | ENUM (`requested`, `sent_to_pharmacy`, `processing`, `fulfilled`, `denied`, `cancelled`) | Non-PHI | State machine enforced at application layer: `requested` → `sent_to_pharmacy` → `processing` → `fulfilled` or `denied`; `cancelled` may be set from any non-terminal state; terminal states (`fulfilled`, `denied`, `cancelled`) may not be reversed; a PATCH transitioning `status` to `denied` requires a non-empty `denial_reason` (see 3.10.7); a PATCH transitioning `status` to `cancelled` requires a non-empty `cancellation_reason` (see 3.10.7) |
+| `denial_reason` | VARCHAR(500) | Non-PHI | Nullable unless `status = 'denied'`; required and must be non-empty when `status` transitions to `denied`; populated from the pharmacy's or prescribing physician's stated reason for rejection; a PATCH to `denied` without this field is rejected with `422` and error code `REFILL_MISSING_DENIAL_REASON` (see 3.10.7) |
+| `cancellation_reason` | VARCHAR(500) | Non-PHI | Nullable unless `status = 'cancelled'`; required and must be non-empty when `status` transitions to `cancelled`; a PATCH to `cancelled` without this field populated is rejected with `422` and error code `REFILL_MISSING_CANCELLATION_REASON` (see 3.10.7) |
+| `requested_at` | TIMESTAMPTZ | **Direct Identifier** | Date and time the refill request was submitted by staff; HIPAA date/time identifier; encrypted at rest; set on insert and immutable thereafter |
+| `fulfilled_at` | TIMESTAMPTZ | **Direct Identifier** | Nullable; date and time the pharmacy confirmed dispensing; HIPAA date/time identifier; encrypted at rest; set when `status` transitions to `fulfilled`; may be updated on a `fulfilled` record without triggering immutability rules (see 3.10.7) |
+
+#### 3.10.4 Pharmacy & FHIR Integration
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `pharmacy_id` | VARCHAR(100) | Non-PHI | Identifier of the target pharmacy — NPI, NCPDP provider ID, or internal pharmacy record ID; required at the time of transmission; may be null on initial `requested` status if the pharmacy is selected at send time |
+| `fhir_medication_request_id` | VARCHAR(100) | Non-PHI | FHIR MedicationRequest resource ID generated for exchange with the pharmacy via HL7 FHIR R4; nullable until the FHIR resource is created when `status` transitions to `sent_to_pharmacy`; not encrypted — public FHIR resource identifier |
+| `ncpdp_script_reference` | VARCHAR(100) | Non-PHI | NCPDP SCRIPT transaction reference returned by the pharmacy system on acknowledgement of the FHIR or EDI transmission; nullable until the pharmacy responds; not encrypted — public transaction identifier; may be updated on a `fulfilled` record (see 3.10.7) |
+
+#### 3.10.5 Audit Metadata
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `created_at` | TIMESTAMPTZ | Non-PHI | UTC |
+| `updated_at` | TIMESTAMPTZ | Non-PHI | UTC; updated on every write |
+| `created_by` | UUID (FK → User) | Non-PHI | Staff user who initiated the refill request; typically `nurse_medication_aide` or `care_coordinator` |
+| `updated_by` | UUID (FK → User) | Non-PHI | Last user to modify the record |
+| `version` | INTEGER | Non-PHI | Optimistic locking; incremented on every permitted write, including PATCH to `fulfilled_at` or `ncpdp_script_reference` on a `fulfilled` record (see 3.10.7); `medication_name`, `dose`, `route`, and `quantity_requested` are immutable once `status = 'fulfilled'` |
+| `is_deleted` | BOOLEAN | Non-PHI | Soft delete only; HIPAA prohibits permanent deletion within retention period |
+
+---
+
+#### 3.10.6 Relationships to Other Entities
+
+| Entity | Relationship | Cardinality | Key Link | Notes |
+|---|---|---|---|---|
+| **Participant** | A participant has zero or more refill requests | 1 → Many | `refill.participant_id` | Refill inherits `is_sud_record` from Participant for the combined 42 CFR Part 2 pharmacy consent gate (see 3.10.8); every refill where `is_controlled_substance = true` and `Participant.is_sud_record = true` requires documented consent before FHIR MedicationRequest or NCPDP SCRIPT transmission |
+| **User (prescribing physician)** | Each refill request names one prescribing physician | Many → 1 | `refill.prescribing_physician_id` | Must resolve to `role = physician`; the prescribing physician's NPI is included in the FHIR MedicationRequest transmitted to the pharmacy |
+| **MARRecord** | A fulfilled refill provides medication supply continuity for active MAR entries for the same participant and medication | Indirect | `mar_record.participant_id` / `refill.participant_id` + `mar_record.medication_name` / `refill.medication_name` | No direct FK from MARRecord to MedicationRefill in Phase 2; alignment is by participant and medication name at the workflow level; `is_controlled_substance` on MedicationRefill mirrors the same flag on the corresponding MARRecord and both records are subject to the same Part 2 access gate |
+| **CarePlan** | A care plan goal may specify a medication whose refill is tracked here; no direct FK | Indirect | `care_plan.participant_id` / `refill.participant_id` | Refill history surfaces in care plan context at the workflow level, not via a database constraint |
+| **Appointment** | A physician appointment may prompt the prescribing physician to authorize a refill; no direct FK | Indirect | `appointment.physician_id` / `refill.prescribing_physician_id` | Refills originating from an appointment encounter may be linked at the FHIR integration layer (a FHIR MedicationRequest may reference the originating FHIR Appointment resource) but carry no database FK in Phase 2 |
+
+---
+
+#### 3.10.7 Unique Constraints
+
+| Constraint | Fields | Scope | Behavior on Violation |
+|---|---|---|---|
+| `uq_refill_participant_medication_requested_at` | `tenant_id`, `participant_id`, `medication_name`, `requested_at` | Per tenant | Return HTTP 409 with error code `REFILL_DUPLICATE`; do not create a second record |
+| `uq_refill_participant_medication_open` | `tenant_id`, `participant_id`, `medication_name` WHERE `status NOT IN ('fulfilled', 'denied', 'cancelled')` | Per tenant (partial index) | Return HTTP 409 with error code `REFILL_DUPLICATE_IN_FLIGHT`; only one open refill request per medication per participant per tenant is permitted at any time |
+
+**Rules:**
+- `uq_refill_participant_medication_requested_at` prevents two refill requests for the same participant and medication submitted at the identical instant within a tenant. This exact-match constraint is enforced at both the database and application layers as a backstop against concurrent duplicate submissions.
+- `uq_refill_participant_medication_open` (in-flight uniqueness): A participant may have at most one open (non-terminal) refill request per medication per tenant at any time. A new refill request for a `medication_name` is rejected if an existing request for the same `participant_id` and `medication_name` within the same `tenant_id` has `status` of `requested`, `sent_to_pharmacy`, or `processing`. The restriction lifts when the prior request reaches a terminal state (`fulfilled`, `denied`, or `cancelled`). This prevents duplicate in-flight transmissions to the pharmacy for the same medication, which could produce duplicate dispense events or controlled substance inventory discrepancies.
+- `REFILL_INVALID_QUANTITY`: A POST or PATCH that supplies a `quantity_requested` value of zero, a negative integer, or any non-positive value is rejected with `422 Unprocessable Entity` and error code `REFILL_INVALID_QUANTITY` before the write is attempted. `quantity_requested` must be a whole number greater than or equal to 1 on every create and on every PATCH that includes the field.
+- `REFILL_FULFILLED_IMMUTABLE`: A refill request whose `status` is `fulfilled` is partially immutable. PATCH requests that include any of `medication_name`, `dose`, `route`, or `quantity_requested` on a fulfilled record are rejected with `422 Unprocessable Entity` and error code `REFILL_FULFILLED_IMMUTABLE` — these fields describe the dispensed medication as confirmed by the pharmacy and cannot be revised after fulfillment. PATCH requests limited to `fulfilled_at` or `ncpdp_script_reference` on a fulfilled record are accepted; the response is `200 OK` with `version` incremented. A PATCH body that mixes immutable and mutable fields is rejected as a whole with `422` — the caller must separate the writes.
+- `REFILL_MISSING_DENIAL_REASON`: A PATCH that transitions `status` to `denied` must supply a non-empty `denial_reason`. A request with `status = 'denied'` and an absent or empty-string `denial_reason` is rejected with `422 Unprocessable Entity` and error code `REFILL_MISSING_DENIAL_REASON`. A request with `status = 'denied'` and a non-empty `denial_reason` is accepted; the database must confirm `status = 'denied'` and `denial_reason` persisted exactly as supplied.
+- `REFILL_MISSING_CANCELLATION_REASON`: A PATCH that transitions `status` to `cancelled` must supply a non-empty `cancellation_reason`. A request with `status = 'cancelled'` and an absent or empty-string `cancellation_reason` is rejected with `422 Unprocessable Entity` and error code `REFILL_MISSING_CANCELLATION_REASON`. A request with `status = 'cancelled'` and a non-empty `cancellation_reason` is accepted; the database must confirm `status = 'cancelled'` and `cancellation_reason` persisted exactly as supplied.
+
+**Implementation:**
+- Database:
+  - `UNIQUE (tenant_id, participant_id, medication_name, requested_at)` index on the `medication_refill` table enforces the exact-match constraint as a backstop
+  - Partial unique index `UNIQUE (tenant_id, participant_id, medication_name) WHERE status NOT IN ('fulfilled', 'denied', 'cancelled')` enforces the in-flight uniqueness constraint at the database layer as a backstop
+- Application:
+  - **In-flight uniqueness check:** On every POST, the service executes: `SELECT 1 FROM medication_refill WHERE tenant_id = :tenant_id AND participant_id = :participant_id AND medication_name = :medication_name AND status NOT IN ('fulfilled', 'denied', 'cancelled') LIMIT 1`. A non-empty result returns `409 Conflict` with `REFILL_DUPLICATE_IN_FLIGHT` before the insert is attempted.
+  - **Quantity validation:** On every POST and on every PATCH that includes `quantity_requested`, the service validates that the value is an integer greater than or equal to 1. If the value is zero, negative, or not a whole number, the service returns `422 Unprocessable Entity` with `REFILL_INVALID_QUANTITY` before the write is attempted.
+  - **Fulfilled-immutable check:** On every PATCH, the service reads the current `status`. If `status = 'fulfilled'` and the request body contains any of `medication_name`, `dose`, `route`, or `quantity_requested`, the service returns `422 Unprocessable Entity` with `REFILL_FULFILLED_IMMUTABLE` before the write is attempted. If the body contains only `fulfilled_at` or `ncpdp_script_reference`, the write proceeds and `version` is incremented.
+  - **Denial-reason check:** On every PATCH, if `status = 'denied'` is present in the request body, the service validates that `denial_reason` is also present and evaluates to a non-empty string after stripping whitespace. If the check fails, the service returns `422 Unprocessable Entity` with `REFILL_MISSING_DENIAL_REASON` before the write is attempted.
+  - **Cancellation-reason check:** On every PATCH, if `status = 'cancelled'` is present in the request body, the service validates that `cancellation_reason` is also present and evaluates to a non-empty string after stripping whitespace. If the check fails, the service returns `422 Unprocessable Entity` with `REFILL_MISSING_CANCELLATION_REASON` before the write is attempted.
+- Error messages exposed to the client:
+  - `REFILL_DUPLICATE`: `"A refill request for this participant and medication at the same time already exists."`
+  - `REFILL_DUPLICATE_IN_FLIGHT`: `"An open refill request for this medication already exists for this participant. The existing request must be fulfilled, denied, or cancelled before a new one can be submitted."`
+  - `REFILL_INVALID_QUANTITY`: `"quantity_requested must be a positive integer greater than zero."`
+  - `REFILL_FULFILLED_IMMUTABLE`: `"A fulfilled refill request's medication, dose, route, or quantity cannot be changed."`
+  - `REFILL_MISSING_DENIAL_REASON`: `"A denial reason is required when denying a refill request."`
+  - `REFILL_MISSING_CANCELLATION_REASON`: `"A cancellation reason is required when cancelling a refill request."`
+
+**Test case targets:**
+- POST a second refill with the same `participant_id`, `medication_name`, and `requested_at` within the same tenant → assert `409` with `REFILL_DUPLICATE`
+- POST a refill for a `medication_name` that already has an open request (status `requested`, `sent_to_pharmacy`, or `processing`) for the same `participant_id` and `tenant_id` → assert `409` with `REFILL_DUPLICATE_IN_FLIGHT`
+- Transition an existing open refill to `fulfilled`, then POST a new refill for the same participant and medication → assert `201 Created` (in-flight restriction lifts on terminal status)
+- Transition an existing open refill to `denied`, then POST a new refill for the same participant and medication → assert `201 Created`
+- Transition an existing open refill to `cancelled`, then POST a new refill for the same participant and medication → assert `201 Created`
+- POST a refill with `quantity_requested = 0` → assert `422` with `REFILL_INVALID_QUANTITY`
+- POST a refill with `quantity_requested = -1` (negative value) → assert `422` with `REFILL_INVALID_QUANTITY`
+- POST a refill with a valid positive integer `quantity_requested` → assert `201 Created`
+- PATCH `quantity_requested = 0` on an existing refill → assert `422` with `REFILL_INVALID_QUANTITY`
+- PATCH `quantity_requested = -5` on an existing refill → assert `422` with `REFILL_INVALID_QUANTITY`
+- PATCH `medication_name`, `dose`, `route`, or `quantity_requested` on a `fulfilled` refill → assert `422` with `REFILL_FULFILLED_IMMUTABLE`
+- PATCH `fulfilled_at` on a `fulfilled` refill → assert `200`; DB confirms `version` incremented and `status` remains `fulfilled`
+- PATCH `ncpdp_script_reference` on a `fulfilled` refill → assert `200`; DB confirms `version` incremented
+- PATCH a body containing both `ncpdp_script_reference` and `medication_name` on a `fulfilled` refill → assert `422` with `REFILL_FULFILLED_IMMUTABLE` (mixed body rejected in full)
+- PATCH `status = 'denied'` with no `denial_reason` field → assert `422` with `REFILL_MISSING_DENIAL_REASON`
+- PATCH `status = 'denied'` with `denial_reason = ""` (empty string) → assert `422` with `REFILL_MISSING_DENIAL_REASON`
+- PATCH `status = 'denied'` with `denial_reason = "   "` (whitespace only) → assert `422` with `REFILL_MISSING_DENIAL_REASON`
+- PATCH `status = 'denied'` with a non-empty `denial_reason` → assert `200`; DB confirms `status = 'denied'` and `denial_reason` persisted exactly as supplied
+- PATCH `status = 'cancelled'` with no `cancellation_reason` field → assert `422` with `REFILL_MISSING_CANCELLATION_REASON`
+- PATCH `status = 'cancelled'` with `cancellation_reason = ""` (empty string) → assert `422` with `REFILL_MISSING_CANCELLATION_REASON`
+- PATCH `status = 'cancelled'` with `cancellation_reason = "   "` (whitespace only) → assert `422` with `REFILL_MISSING_CANCELLATION_REASON`
+- PATCH `status = 'cancelled'` with a non-empty `cancellation_reason` → assert `200`; DB confirms `status = 'cancelled'` and `cancellation_reason` persisted exactly as supplied
+
+---
+
+#### 3.10.8 42 CFR Part 2 Compliance Note
+
+When `is_controlled_substance = true`, the MedicationRefill record is subject to 42 CFR Part 2 access controls, consistent with the controls applied to MARRecord (3.5.8). The MedicationRefill entity carries its own `is_controlled_substance` flag — the control is evaluated from this field directly, not derived solely from `Participant.is_sud_record`. The strictest controls and the mandatory pharmacy consent gate apply when both `is_controlled_substance = true` and `Participant.is_sud_record = true`, which indicates a controlled substance refill in the context of a substance use disorder treatment record, the core scope of 42 CFR Part 2.
+
+**Access restriction:**
+- Read and write access to a refill record where `is_controlled_substance = true` is limited to `care_coordinator`, `nurse_medication_aide`, and `compliance_officer` roles
+- `is_controlled_substance` is evaluated at the application service layer on every refill read and write — it is not sufficient to enforce this at the API Gateway, because `is_controlled_substance` is itself a Part 2-protected field that must not be exposed to the gateway layer
+- API responses for unauthorized role requests return `403 Forbidden` with no indication of the refill record's existence
+- `medication_name`, `dose`, `route`, `is_controlled_substance`, `denial_reason`, and `ncpdp_script_reference` are additionally redacted from list-view responses for unauthorized roles even when the participant's non-clinical fields are otherwise accessible
+
+**Audit logging requirement:**
+- Every read on a refill record where `is_controlled_substance = true` must be captured in the audit log with: `user_id`, `tenant_id`, `refill_id`, action type `PHI_READ`, timestamp, and outcome — before the response is returned to the caller
+- Every write must be logged with action type `PHI_WRITE` and `data_affected` listing field names changed (never field values)
+- Failed access attempts are logged with `ACCESS_DENIED`
+
+**Relationship to Participant.is_sud_record:**
+- The strictest controls apply when both `MedicationRefill.is_controlled_substance = true` AND `Participant.is_sud_record = true` — this combination indicates a controlled substance refill as part of SUD treatment, which is the core scope of 42 CFR Part 2
+- When `is_controlled_substance = true` but `Participant.is_sud_record = false`, the refill may represent a controlled substance unrelated to SUD treatment (e.g., pain management); elevated access controls still apply per this design, but the full Part 2 consent gate for external pharmacy disclosure is triggered only when `Participant.is_sud_record = true`
+
+**External disclosure:**
+- No MedicationRefill record where `is_controlled_substance = true` and `Participant.is_sud_record = true` may be transmitted to a pharmacy or any external party — including via FHIR MedicationRequest or NCPDP SCRIPT exchange — without explicit patient consent documented in the system, consistent with 42 CFR Part 2 §2.31 and the pharmacy integration note in Section 2.4. The FHIR outbound adapter must verify that a valid consent record exists before generating or transmitting the FHIR MedicationRequest resource or the NCPDP SCRIPT message. A missing consent record blocks the pharmacy transmission and emits a `CONSENT_CHECK` audit event with outcome `DENIED`.
+
+---
+
+> **Pending approval before proceeding to 3.11 Reminder.**
+
+---
+
+### 3.11 Reminder
+
+The Reminder entity records a scheduled notification destined for a participant or a registered family member, generated by the Reminder & Tracking App (Section 1.2, module 6). Each reminder captures the notification content, target channel, scheduled delivery time, and the full delivery lifecycle from scheduling through confirmed receipt or failure. Reminders support three primary use cases: appointment alerts, transport notifications, and general care communications addressed to the participant or their family. Outbound delivery is routed to mobile devices via Apple Push Notification service (APNs) or Firebase Cloud Messaging (FCM) per the integration layer (Section 2.4). The no-PHI-in-payload rule applies to every channel without exception: notification titles and bodies must contain no protected health information; clinical context is surfaced only after the recipient authenticates via the deep link embedded in the notification. Access to reminder records is gated by the `participant_family` RBAC role for family-member recipients; direct participant and care-team access follows the standard role hierarchy. 42 CFR Part 2 does not govern Reminder records directly, but reminder delivery for participants whose `is_sud_record = true` is subject to an SUD delivery gate when the reminder references a SUD-related appointment or care plan context.
+
+> **Phase 2 scope:** core reminder record, delivery status lifecycle, and push notification channel integration (APNs/FCM). Automated reminder generation triggered by appointment scheduling events and care plan goal alerts are Phase 3. SMS and email channel delivery are deferred to Phase 3; Phase 2 supports push channel only.
+
+#### 3.11.1 Core Reference
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `reminder_id` | UUID (PK) | Non-PHI | System-generated; never user-supplied |
+| `tenant_id` | UUID (FK → Tenant) | Non-PHI | Row-level tenant isolation; all queries must filter by this |
+| `participant_id` | UUID (FK → Participant) | Clinical PHI | Central link to the Participant record; `Participant.is_sud_record` is read at delivery time to evaluate the SUD delivery gate (see 3.11.8) |
+
+#### 3.11.2 Content Fields
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `reminder_type` | ENUM (`appointment`, `transport`, `general`) | Non-PHI | Category of the reminder; drives deep-link path construction and UI rendering on the mobile client; `appointment` reminders relate to the Physician Appointments module; `transport` reminders notify of scheduled pickup or drop-off; `general` covers administrative care communications |
+| `title` | VARCHAR(100) | Non-PHI | Short notification title displayed in the device notification tray; must contain no PHI — no participant name, date of birth, diagnosis code, medication name, or appointment detail; generic text only, e.g., `"You have an upcoming appointment"`; validated on every POST and PATCH (see `REMINDER_PHI_IN_PAYLOAD`, 3.11.7) |
+| `body` | VARCHAR(500) | Non-PHI | Notification body text delivered in the push payload; must contain no PHI; only a generic description and the deep-link token are permitted; a body containing any PHI pattern is rejected with `422` and error code `REMINDER_PHI_IN_PAYLOAD` before the record is written or the notification is queued (see 3.11.7) |
+| `deep_link_path` | VARCHAR(500) | Non-PHI | Authenticated deep-link path embedded in the push payload; resolves to the relevant clinical screen (appointment detail, transport summary) only after the recipient completes authentication in the mobile app; the path itself must carry no PHI — no participant identifiers, diagnosis codes, or appointment dates that could be interpreted without authentication; consistent with the Section 2.4 integration constraint |
+| `reference_entity_type` | ENUM (`appointment`, `none`) | Non-PHI | Nullable; indicates the type of clinical record this reminder is associated with; Phase 2 supports `appointment` and `none` only — the Transport entity is deferred to Phase 3 and `reference_entity_type` will be extended with a `transport_record` value at that time; no FK to a Transport entity exists in Phase 2; used at delivery time to evaluate the SUD delivery gate when `Participant.is_sud_record = true` (see 3.11.8); `none` or null when the reminder has no specific clinical record reference |
+| `reference_entity_id` | UUID | Non-PHI | Nullable; the primary key of the associated appointment record; no FK constraint in Phase 2 — reminder generation from appointment records is Phase 3, and the Transport entity referenced by `reminder_type = 'transport'` is deferred to Phase 3 with no FK defined in Phase 2; stored as a soft reference for application-layer lookup at delivery time |
+
+#### 3.11.3 Delivery & Status
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `status` | ENUM (`scheduled`, `sent`, `delivered`, `failed`, `cancelled`) | Non-PHI | State machine enforced at application layer: `scheduled` → `sent` → `delivered` or `failed`; `cancelled` may be set from any non-terminal state; terminal states (`delivered`, `failed`, `cancelled`) may not be reversed; a PATCH transitioning `status` to `cancelled` requires a non-empty `cancellation_reason` (see 3.11.7) |
+| `channel` | ENUM (`push`) | Non-PHI | Delivery channel; Phase 2 supports `push` only; SMS and email are Phase 3; must be `push` on all Phase 2 records |
+| `scheduled_for` | TIMESTAMPTZ | **Direct Identifier** | Date and time the reminder is scheduled for delivery to the device; HIPAA date/time identifier — the delivery time in conjunction with `participant_id` can imply an appointment date; encrypted at rest; must be strictly in the future at creation time (see `REMINDER_INVALID_SCHEDULED_FOR`, 3.11.7) |
+| `sent_at` | TIMESTAMPTZ | **Direct Identifier** | Nullable; date and time the notification was submitted to APNs or FCM; HIPAA date/time identifier; encrypted at rest; set when `status` transitions to `sent` |
+| `delivered_at` | TIMESTAMPTZ | **Direct Identifier** | Nullable; date and time the delivery receipt was received from APNs or FCM confirming device receipt; HIPAA date/time identifier; encrypted at rest; set when `status` transitions to `delivered` |
+| `failure_reason` | VARCHAR(500) | Non-PHI | Nullable; populated when `status = 'failed'`; records the APNs or FCM error code and provider description returned by the push provider; must contain no PHI; writable only when `status = 'failed'` — a PATCH to `failure_reason` on a record with `status = 'delivered'` or `status = 'sent'` is rejected with `422` and `REMINDER_SENT_IMMUTABLE` (see 3.11.7) |
+| `cancellation_reason` | VARCHAR(500) | Non-PHI | Nullable unless `status = 'cancelled'`; required and must be non-empty when `status` transitions to `cancelled`; a PATCH to `cancelled` without this field populated is rejected with `422` and error code `REMINDER_MISSING_CANCELLATION_REASON` (see 3.11.7) |
+
+#### 3.11.4 Channel Integration
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `push_provider` | ENUM (`apns`, `fcm`) | Non-PHI | Nullable until delivery is attempted; identifies the push provider that handled the send; set when `status` transitions to `sent` |
+| `device_push_token` | VARCHAR(500) | Non-PHI | Device push token registered by the participant or family member's mobile app session; required before the notification can be submitted to APNs or FCM; not encrypted — the token is a provider-assigned opaque identifier with no PHI content; validated as non-empty before the send attempt |
+| `provider_message_id` | VARCHAR(200) | Non-PHI | Nullable; APNs `apns-id` or FCM message ID returned by the push provider on successful submission; used to correlate delivery receipts with provider logs; set when `status` transitions to `sent`; not encrypted — public provider transaction identifier |
+| `recipient_user_id` | UUID (FK → User) | Non-PHI | Nullable; identifies the family member User record that is the intended recipient when the notification is directed to a registered family member rather than the participant's own portal session; when null, the notification is directed to the participant's primary registered device; must resolve to a User with `role = participant_family` when non-null; the `participant_family` RBAC gate limits read access to the reminder record to the matching user (see 3.11.8) |
+
+#### 3.11.5 Audit Metadata
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `created_at` | TIMESTAMPTZ | Non-PHI | UTC |
+| `updated_at` | TIMESTAMPTZ | Non-PHI | UTC; updated on every write |
+| `created_by` | UUID (FK → User) | Non-PHI | User or service identity that created the reminder record; typically a `care_coordinator` or the Reminder & Tracking service identity for system-generated reminders |
+| `updated_by` | UUID (FK → User) | Non-PHI | Last user or service to modify the record |
+| `version` | INTEGER | Non-PHI | Optimistic locking; incremented on every permitted write; `title`, `body`, `deep_link_path`, `channel`, and `scheduled_for` are immutable once `status` is no longer `scheduled` (see `REMINDER_SENT_IMMUTABLE`, 3.11.7) |
+| `is_deleted` | BOOLEAN | Non-PHI | Soft delete only; HIPAA prohibits permanent deletion within retention period |
+
+---
+
+#### 3.11.6 Relationships to Other Entities
+
+| Entity | Relationship | Cardinality | Key Link | Notes |
+|---|---|---|---|---|
+| **Participant** | A participant has zero or more reminders | 1 → Many | `reminder.participant_id` | `Participant.is_sud_record` is read at delivery time to evaluate the SUD delivery gate (see 3.11.8); no PHI from the Participant record is embedded in the notification payload |
+| **User (participant_family)** | A family member user may be the named recipient of a reminder | Many → 1 | `reminder.recipient_user_id` | Nullable; must resolve to `role = participant_family`; when non-null, the family member is the intended notification recipient and must satisfy the `participant_family` RBAC gate to read the reminder record (see 3.11.8); the participant's own portal session retains read access to all reminders associated with their `participant_id` regardless of `recipient_user_id` |
+| **Appointment** | An appointment may contextually prompt a reminder for the same participant; no direct FK in Phase 2 | Indirect | `reminder.reference_entity_id` / `appointment.appointment_id` | `reference_entity_type = 'appointment'` and `reference_entity_id` carry the soft association; automated reminder generation triggered by appointment scheduling events is Phase 3; in Phase 2, reminders referencing appointments are created manually by care coordinators |
+| **CarePlan** | A care plan may contextually prompt care goal reminders for the same participant; no direct FK in Phase 2 | Indirect | `reminder.participant_id` / `care_plan.participant_id` | Care plan goal-based alert generation is Phase 3; no `reference_entity_type` value for care plan is defined in Phase 2; alignment is by participant at the workflow level |
+
+---
+
+#### 3.11.7 Unique Constraints
+
+| Constraint | Fields | Scope | Behavior on Violation |
+|---|---|---|---|
+| `uq_reminder_participant_type_scheduled_for` | `tenant_id`, `participant_id`, `reminder_type`, `scheduled_for` | Per tenant | Return HTTP 409 with error code `REMINDER_DUPLICATE`; do not create a second record |
+| `uq_reminder_participant_type_open` | `tenant_id`, `participant_id`, `reminder_type` WHERE `status = 'scheduled'` | Per tenant (partial index) | Return HTTP 409 with error code `REMINDER_DUPLICATE_SCHEDULED`; only one scheduled reminder per type per participant per tenant is permitted at any time |
+
+**Rules:**
+- `uq_reminder_participant_type_scheduled_for` prevents two reminders of the same type for the same participant at the identical scheduled delivery time within a tenant. This exact-match constraint is enforced at both the database and application layers as a backstop against concurrent duplicate submissions.
+- `uq_reminder_participant_type_open` (in-flight uniqueness): A participant may have at most one reminder in `scheduled` status per `reminder_type` per tenant at any time. A new reminder of the same type is rejected if an existing reminder for the same `participant_id`, `reminder_type`, and `tenant_id` currently has `status = 'scheduled'`. The restriction lifts when the prior reminder reaches any non-`scheduled` status (`sent`, `delivered`, `failed`, or `cancelled`). This prevents duplicate push notifications for the same upcoming appointment or transport event.
+- `REMINDER_PHI_IN_PAYLOAD`: A POST or PATCH that supplies a `title` or `body` value containing a detected PHI pattern — participant name, date of birth, age, diagnosis code, medication name, appointment date or time expressed as a human-readable string, or any other HIPAA-enumerated identifier — is rejected with `422 Unprocessable Entity` and error code `REMINDER_PHI_IN_PAYLOAD` before the record is written or the notification is queued. PHI pattern detection is enforced at the application service layer on every create and on every PATCH that includes `title` or `body`.
+- `REMINDER_INVALID_SCHEDULED_FOR`: A POST that supplies a `scheduled_for` value at or before the current UTC timestamp is rejected with `422 Unprocessable Entity` and error code `REMINDER_INVALID_SCHEDULED_FOR`. Reminders must be scheduled for a strictly future delivery time; the comparison is performed against server UTC at the moment the request is processed.
+- `REMINDER_SENT_IMMUTABLE`: A reminder whose `status` is no longer `scheduled` is partially immutable. PATCH requests that include any of `title`, `body`, `deep_link_path`, `channel`, or `scheduled_for` on a non-`scheduled` record are rejected with `422 Unprocessable Entity` and error code `REMINDER_SENT_IMMUTABLE`. PATCH to `failure_reason` is only permitted when `status = 'failed'`; a PATCH including `failure_reason` on a record with `status = 'delivered'` or `status = 'sent'` is rejected with `422 Unprocessable Entity` and `REMINDER_SENT_IMMUTABLE` because those states do not represent a delivery failure. PATCH requests limited to `failure_reason` on a `failed` record are accepted; the response is `200 OK` with `version` incremented. A PATCH body that mixes immutable and mutable fields is rejected as a whole with `422` — the caller must separate the writes.
+- `REMINDER_MISSING_CANCELLATION_REASON`: A PATCH that transitions `status` to `cancelled` must supply a non-empty `cancellation_reason`. A request with `status = 'cancelled'` and an absent or empty-string `cancellation_reason` is rejected with `422 Unprocessable Entity` and error code `REMINDER_MISSING_CANCELLATION_REASON`. A request with `status = 'cancelled'` and a non-empty `cancellation_reason` is accepted; the database must confirm `status = 'cancelled'` and `cancellation_reason` persisted exactly as supplied.
+
+**Implementation:**
+- Database:
+  - `UNIQUE (tenant_id, participant_id, reminder_type, scheduled_for)` index on the `reminder` table enforces the exact-match constraint as a backstop
+  - Partial unique index `UNIQUE (tenant_id, participant_id, reminder_type) WHERE status = 'scheduled'` enforces the in-flight uniqueness constraint at the database layer as a backstop
+- Application:
+  - **In-flight uniqueness check:** On every POST, the service executes: `SELECT 1 FROM reminder WHERE tenant_id = :tenant_id AND participant_id = :participant_id AND reminder_type = :reminder_type AND status = 'scheduled' LIMIT 1`. A non-empty result returns `409 Conflict` with `REMINDER_DUPLICATE_SCHEDULED` before the insert is attempted.
+  - **PHI-in-payload check:** On every POST and on every PATCH that includes `title` or `body`, the service runs the registered PHI pattern detector over both fields. If a match is found, the service returns `422 Unprocessable Entity` with `REMINDER_PHI_IN_PAYLOAD` before the write is attempted. The push notification adapter additionally validates the final composed payload against the same pattern set immediately before submission to APNs or FCM as a defence-in-depth check.
+  - **Scheduled-for validation:** On every POST, the service compares `scheduled_for` to the current UTC timestamp. If `scheduled_for` is not strictly greater than the current UTC time, the service returns `422 Unprocessable Entity` with `REMINDER_INVALID_SCHEDULED_FOR` before the insert is attempted.
+  - **Sent-immutable check:** On every PATCH, the service reads the current `status`. If `status != 'scheduled'` and the request body contains any of `title`, `body`, `deep_link_path`, `channel`, or `scheduled_for`, the service returns `422 Unprocessable Entity` with `REMINDER_SENT_IMMUTABLE` before the write is attempted. If the request body contains `failure_reason` and `status != 'failed'` (i.e., `status` is `delivered`, `sent`, or `cancelled`), the service also returns `422 Unprocessable Entity` with `REMINDER_SENT_IMMUTABLE`. If the body contains only `failure_reason` and `status = 'failed'`, the write proceeds and `version` is incremented. A PATCH body that mixes immutable and mutable fields is rejected as a whole with `422` — the caller must separate the writes.
+  - **Cancellation-reason check:** On every PATCH, if `status = 'cancelled'` is present in the request body, the service validates that `cancellation_reason` is also present and evaluates to a non-empty string after stripping whitespace. If the check fails, the service returns `422 Unprocessable Entity` with `REMINDER_MISSING_CANCELLATION_REASON` before the write is attempted.
+- Error messages exposed to the client:
+  - `REMINDER_DUPLICATE`: `"A reminder of this type for this participant at this scheduled time already exists."`
+  - `REMINDER_DUPLICATE_SCHEDULED`: `"A scheduled reminder of this type already exists for this participant. The existing reminder must be sent, delivered, failed, or cancelled before a new one can be scheduled."`
+  - `REMINDER_PHI_IN_PAYLOAD`: `"Notification title and body must not contain protected health information."`
+  - `REMINDER_INVALID_SCHEDULED_FOR`: `"scheduled_for must be a future date and time."`
+  - `REMINDER_SENT_IMMUTABLE`: `"A reminder that has already been submitted to the push provider cannot have its content, channel, scheduled time, or failure reason changed."`
+  - `REMINDER_MISSING_CANCELLATION_REASON`: `"A cancellation reason is required when cancelling a reminder."`
+
+**Test case targets:**
+- POST a second reminder with the same `participant_id`, `reminder_type`, and `scheduled_for` within the same tenant → assert `409` with `REMINDER_DUPLICATE`
+- POST a reminder for a `participant_id` and `reminder_type` that already has a `scheduled` reminder within the same tenant → assert `409` with `REMINDER_DUPLICATE_SCHEDULED`
+- Transition an existing `scheduled` reminder to `sent`, then POST a new reminder of the same type for the same participant → assert `201 Created` (in-flight restriction lifts on any non-`scheduled` status)
+- Transition an existing `scheduled` reminder to `cancelled` with a non-empty `cancellation_reason`, then POST a new reminder of the same type for the same participant → assert `201 Created`
+- POST a reminder with `scheduled_for` equal to the current UTC timestamp → assert `422` with `REMINDER_INVALID_SCHEDULED_FOR`
+- POST a reminder with `scheduled_for` one hour in the past → assert `422` with `REMINDER_INVALID_SCHEDULED_FOR`
+- POST a reminder with a `scheduled_for` value one minute in the future → assert `201 Created`
+- POST a reminder with PHI text in `title` (e.g., participant full name) → assert `422` with `REMINDER_PHI_IN_PAYLOAD`
+- POST a reminder with a diagnosis code string in `body` → assert `422` with `REMINDER_PHI_IN_PAYLOAD`
+- POST a reminder with a medication name in `body` → assert `422` with `REMINDER_PHI_IN_PAYLOAD`
+- POST a reminder with a generic, PHI-free `title` and `body` → assert `201 Created`
+- PATCH `title` on a reminder with `status = 'sent'` → assert `422` with `REMINDER_SENT_IMMUTABLE`
+- PATCH `scheduled_for` on a reminder with `status = 'delivered'` → assert `422` with `REMINDER_SENT_IMMUTABLE`
+- PATCH `channel` on a reminder with `status = 'failed'` → assert `422` with `REMINDER_SENT_IMMUTABLE`
+- PATCH `failure_reason` on a reminder with `status = 'delivered'` → assert `422` with `REMINDER_SENT_IMMUTABLE`
+- PATCH `failure_reason` on a reminder with `status = 'sent'` → assert `422` with `REMINDER_SENT_IMMUTABLE`
+- PATCH a body containing both `failure_reason` and `title` on a reminder with `status = 'sent'` → assert `422` with `REMINDER_SENT_IMMUTABLE` (mixed body rejected in full)
+- PATCH `failure_reason` on a `failed` reminder → assert `200`; DB confirms `version` incremented and `status` remains `failed`
+- PATCH `status = 'cancelled'` with no `cancellation_reason` field → assert `422` with `REMINDER_MISSING_CANCELLATION_REASON`
+- PATCH `status = 'cancelled'` with `cancellation_reason = ""` (empty string) → assert `422` with `REMINDER_MISSING_CANCELLATION_REASON`
+- PATCH `status = 'cancelled'` with `cancellation_reason = "   "` (whitespace only) → assert `422` with `REMINDER_MISSING_CANCELLATION_REASON`
+- PATCH `status = 'cancelled'` with a non-empty `cancellation_reason` → assert `200`; DB confirms `status = 'cancelled'` and `cancellation_reason` persisted exactly as supplied
+- Attempt to trigger delivery of a reminder where `Participant.is_sud_record = true` and `reference_entity_type = 'appointment'` without a valid consent record documented in the system per section 3.12 Consent — assert `status` remains `scheduled`, delivery is suppressed, and a `SUD_DELIVERY_GATE` audit event is emitted with outcome `SUPPRESSED`
+- Attempt to GET a reminder record where `recipient_user_id` does not match the requesting user's `user_id` (requesting user has `role = participant_family`) — assert `403 Forbidden`
+
+---
+
+#### 3.11.8 Privacy Note
+
+**No-PHI-in-payload rule:**
+
+The no-PHI-in-payload constraint governs every outbound push notification generated from a Reminder record. The rule derives from the Section 2.4 integration constraint for the APNs/FCM channel and applies without exception across all `reminder_type` values and all participant contexts. The push payload delivered to the device — specifically the `title` and `body` fields — must contain no protected health information of any kind: no participant name, date of birth, age, diagnosis code, medication name, appointment date or time expressed as human-readable text, provider name, or any of the 18 HIPAA identifiers. Only a generic notification string and a deep-link token are permitted in the payload. Clinical context (appointment detail, transport schedule, care communication) is surfaced exclusively through the authenticated deep-link destination — the participant or family member must complete authentication in the mobile app before the clinical screen is rendered.
+
+The `REMINDER_PHI_IN_PAYLOAD` check (see 3.11.7) is the enforcement mechanism at write time. The push notification adapter additionally validates the final composed payload against the same PHI pattern set immediately before submission to APNs or FCM. A payload that fails the pre-send check is held in `status = 'scheduled'`, the delivery attempt is aborted, and a `PHI_PAYLOAD_BLOCKED` audit event is emitted with `reminder_id`, `tenant_id`, `user_id`, and timestamp — no payload content is captured in the audit log.
+
+**`participant_family` RBAC gate:**
+
+Read access to Reminder records is governed by role at the record level. The `participant_family` role grants access only to reminder records where `recipient_user_id` matches the requesting user's `user_id` — a family member cannot enumerate or read reminders directed to the participant's own portal session or to a different family member. The participant's own authenticated portal session has read access to all reminders associated with their `participant_id` regardless of `recipient_user_id`. Staff roles — `care_coordinator` and above — may read all reminder records for participants within their tenant. The `nurse_medication_aide` and `billing_specialist` roles have no access to reminder records.
+
+The `participant_family` RBAC gate is evaluated at the application service layer on every reminder read and list operation; enforcement at the API Gateway alone is insufficient because the access decision depends on `recipient_user_id`, which requires a record-level check unavailable at the gateway.
+
+Write access follows a narrower rule: only `care_coordinator` and above may create, update, or cancel reminder records in Phase 2. Participants and family members interact with reminders through the read-only portal; they do not hold write access to reminder records directly.
+
+**SUD delivery gate:**
+
+42 CFR Part 2 does not govern the Reminder entity directly — reminder records contain no SUD diagnosis data, treatment episode information, or controlled substance references and therefore fall outside the core scope of 42 CFR Part 2. However, a reminder that references a SUD-related clinical context — identified when `Participant.is_sud_record = true` and `reference_entity_type = 'appointment'` (a `transport_record` and care-plan value are Phase 3) — is subject to a delivery gate before the push notification is submitted to APNs or FCM.
+
+The delivery gate operates as follows:
+- At the time the Reminder & Tracking service prepares a push submission, it reads `Participant.is_sud_record` for the associated participant
+- If `is_sud_record = true` and `reference_entity_type` is not `none`, the service evaluates whether a valid consent record documented in the system per section 3.12 Consent exists for this participant
+- If no valid consent record exists, the notification is held in `status = 'scheduled'`, the delivery attempt is aborted, and a `SUD_DELIVERY_GATE` audit event is emitted with `reminder_id`, `participant_id`, `tenant_id`, and outcome `SUPPRESSED`
+- If a valid consent record exists, delivery proceeds normally and the audit event is emitted with outcome `ALLOWED`
+- When `is_sud_record = false`, or when `reference_entity_type = 'none'`, the SUD delivery gate does not apply and the standard no-PHI payload check alone governs delivery
+
+The `SUD_DELIVERY_GATE` audit event is emitted for every delivery attempt — both `SUPPRESSED` and `ALLOWED` outcomes — when `Participant.is_sud_record = true`. This preserves a complete delivery audit trail for SUD participants regardless of delivery outcome.
+
+The `is_sud_record` value used for the gate check is read at delivery time, not stored on the Reminder record itself. This ensures that changes to `Participant.is_sud_record` — including on record closure or consent withdrawal — are reflected in subsequent delivery attempts without requiring reminder record updates.
+
+---
+
+> **Pending approval before proceeding to 3.12 Consent.**
+
+---
+
+### 3.12 Consent
+
+The Consent entity records explicit patient consent for the disclosure of 42 CFR Part 2-protected information to external parties, and is the authoritative consent gate for every outbound SUD disclosure in the platform. It is referenced by CarePlan (3.8.9), Appointment (3.9.9), MedicationRefill (3.10.8), and Reminder (3.11.8) as the single source of truth for whether a disclosure is permitted at the time it is attempted. Each consent record is tied to one participant, specifies the permitted disclosure recipient type (`ehr`, `pharmacy`, or `push_notification`), names the specific recipient, states the purpose and scope of the disclosure, and carries an effective date and an expiration date as required by 42 CFR Part 2 §2.31. Consent may be withdrawn by the participant or authorized staff at any time by transitioning `status` to `withdrawn`, which immediately blocks all future disclosures of that type for that participant; disclosures completed before withdrawal are unaffected. A new consent record may be created to restore disclosure authorization after a prior consent is withdrawn or has expired. The Consent entity is not module-specific — it is a cross-cutting regulatory artifact that supports every module conducting outbound PHI disclosures for SUD-flagged participants.
+
+> **Phase 2 scope:** core consent fields, disclosure recipient type classification (`ehr`, `pharmacy`, `push_notification`), validity lifecycle (`active`, `withdrawn`, `expired`), and the four consent gate integrations (CarePlan FHIR disclosure per 3.8.9, Appointment FHIR disclosure per 3.9.9, MedicationRefill pharmacy transmission per 3.10.8, and Reminder push notification delivery per 3.11.8). The `expired` status is set by a background cron job that runs on a scheduled interval and evaluates `expiration_date` against the current server date, following the same pattern as the incident escalation alert job (3.6.8); Phase 3 replaces the cron with an event-driven expiration trigger. Multi-recipient batch consent, re-disclosure prohibition tracking, and integration with an external consent management platform are Phase 3.
+
+#### 3.12.1 Core Reference
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `consent_id` | UUID (PK) | Non-PHI | System-generated; never user-supplied |
+| `tenant_id` | UUID (FK → Tenant) | Non-PHI | Row-level tenant isolation; all queries must filter by this |
+| `participant_id` | UUID (FK → Participant) | Clinical PHI | Central link to the Participant record; a consent record is only gate-relevant when `Participant.is_sud_record = true`; a consent record for a participant where `is_sud_record = false` is accepted but produces no gate effect because Part 2 disclosure controls are not triggered for that participant |
+
+#### 3.12.2 Consent Scope Fields
+
+These fields satisfy the written consent content requirements of 42 CFR Part 2 §2.31(a)(3)–(5).
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `disclosure_recipient_type` | ENUM (`ehr`, `pharmacy`, `push_notification`) | Non-PHI | Category of the external disclosure this consent authorizes; `ehr` covers FHIR-based exchange with physician EHR systems and is the gate type checked by CarePlan (3.8.9) and Appointment (3.9.9); `pharmacy` covers FHIR MedicationRequest and NCPDP SCRIPT transmission and is the gate type checked by MedicationRefill (3.10.8); `push_notification` covers APNs/FCM delivery for SUD-flagged participants and is the gate type checked by Reminder (3.11.8); the disclosure gate in each referencing module filters on this exact value |
+| `disclosure_recipient_name` | VARCHAR(200) | Non-PHI | Name of the specific individual, organization, or program authorized to receive the disclosure, as required by 42 CFR Part 2 §2.31(a)(3); e.g., `"Walgreens Pharmacy NPI 1234567890"`, `"Dr. A. Smith EHR via FHIR"`, `"Participant Mobile App Push Notifications"`; required on create; must be non-empty |
+| `disclosure_purpose` | VARCHAR(500) | Non-PHI | Specific purpose of the disclosure as required by 42 CFR Part 2 §2.31(a)(4); e.g., `"Treatment coordination with attending physician"`, `"Prescription fulfillment for active medication regimen"`, `"Appointment and transport reminder delivery"`; required on create; must be non-empty |
+| `scope_description` | VARCHAR(1000) | Clinical PHI | Description of the type and extent of information to be disclosed as required by 42 CFR Part 2 §2.31(a)(5); encrypted at rest because the scope description may reference specific SUD treatment context, diagnosis category, or medication class; required on create; must be non-empty |
+
+#### 3.12.3 Status & Validity Lifecycle
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `status` | ENUM (`active`, `withdrawn`, `expired`) | Non-PHI | `active` — consent is in force and permits disclosures of the authorized type, subject to `effective_date` and `expiration_date` checks at disclosure time; `withdrawn` — consent has been explicitly revoked by the participant or authorized staff; terminal and irreversible; `expired` — set by the background cron job (see Phase 2 scope note) when `expiration_date` has passed; terminal; both `withdrawn` and `expired` immediately block all future disclosures of the authorized recipient type; a PATCH to any field on a `withdrawn` or `expired` record is rejected with `422` and `CONSENT_WITHDRAWN_IMMUTABLE` (see 3.12.7) |
+| `effective_date` | DATE | **Direct Identifier** | Date on which the consent takes effect; HIPAA date identifier; encrypted at rest; must be strictly before `expiration_date` (see `CONSENT_INVALID_DATES`, 3.12.7); may be set to a past date to accommodate late entry of a consent form signed before system recording; at disclosure time the gate checks `effective_date <= CURRENT_DATE` in addition to `status = 'active'` |
+| `expiration_date` | DATE | **Direct Identifier** | Date on which the consent expires, as required by 42 CFR Part 2 §2.31(a)(8); HIPAA date identifier; encrypted at rest; must be strictly after `effective_date` and strictly after the current date at creation time (see `CONSENT_EXPIRATION_IN_PAST`, 3.12.7); at disclosure time the gate checks `expiration_date > CURRENT_DATE`; the background cron job transitions `status` to `expired` when `expiration_date` passes, following the same scheduled-interval pattern as the incident escalation alert job (3.6.8); Phase 3 replaces the cron with an event-driven expiration trigger |
+| `withdrawn_at` | TIMESTAMPTZ | **Direct Identifier** | Nullable; date and time the consent was withdrawn; HIPAA date/time identifier; encrypted at rest; set when `status` transitions to `withdrawn`; immutable once set |
+| `withdrawal_reason` | VARCHAR(500) | Non-PHI | Nullable; records the reason the participant or staff withdrew consent; not required — a participant holds an absolute right to withdraw without explanation per 42 CFR Part 2 §2.31(c); populated when provided at withdrawal time |
+
+#### 3.12.4 Documentation Fields
+
+These fields satisfy the signature and execution record requirements of 42 CFR Part 2 §2.31(a)(7) and (a)(9).
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `consent_form_reference` | VARCHAR(200) | Non-PHI | Reference to the signed consent form artifact stored in the platform's document management system (S3 object key or document record ID); required on create — a consent record may not be activated without a documented consent artifact, consistent with the written consent requirement of 42 CFR Part 2 §2.31; a POST without a non-empty `consent_form_reference` is rejected with `422` and `CONSENT_MISSING_FORM_REFERENCE` (see 3.12.7) |
+| `consent_method` | ENUM (`written`, `electronic`) | Non-PHI | Indicates how consent was executed; `written` for a physically signed paper form; `electronic` for a digitally signed or acknowledged form permissible under HITECH; required on create |
+| `participant_signature_date` | DATE | **Direct Identifier** | Date the participant or their authorized representative signed the consent form, as required by 42 CFR Part 2 §2.31(a)(9); HIPAA date identifier; encrypted at rest; required on create |
+| `witnessed_by_user_id` | UUID (FK → User) | Non-PHI | Nullable; identifies the staff user who witnessed consent execution; must resolve to an active User record within the same tenant when non-null; not required by §2.31 but recommended as a platform practice for evidentiary purposes |
+
+#### 3.12.5 Audit Metadata
+
+| Field | Data Type | PHI Class | Notes |
+|---|---|---|---|
+| `created_at` | TIMESTAMPTZ | Non-PHI | UTC |
+| `updated_at` | TIMESTAMPTZ | Non-PHI | UTC; updated on every write |
+| `created_by` | UUID (FK → User) | Non-PHI | Staff user who created the consent record; typically `care_coordinator` or `compliance_officer` |
+| `updated_by` | UUID (FK → User) | Non-PHI | Last user or service to modify the record; on withdrawal this is the staff user or system identity that set `status = 'withdrawn'` |
+| `version` | INTEGER | Non-PHI | Optimistic locking; incremented on every permitted write; `disclosure_recipient_type`, `disclosure_recipient_name`, `disclosure_purpose`, `scope_description`, `effective_date`, `expiration_date`, `participant_signature_date`, `consent_form_reference`, and `consent_method` are immutable once `status` is no longer `active` (see `CONSENT_WITHDRAWN_IMMUTABLE`, 3.12.7) |
+| `is_deleted` | BOOLEAN | Non-PHI | Soft delete only; HIPAA prohibits permanent deletion within the applicable retention period; 42 CFR Part 2 §2.16 requires SUD records to be retained per applicable state and federal schedules |
+
+---
+
+#### 3.12.6 Relationships to Other Entities
+
+| Entity | Relationship | Cardinality | Key Link | Notes |
+|---|---|---|---|---|
+| **Participant** | A participant has zero or more consent records | 1 → Many | `consent.participant_id` | A consent record produces a gate effect only while `Participant.is_sud_record = true`; the gate query always reads `Participant.is_sud_record` at disclosure time — a consent record alone does not authorize disclosure if the participant's SUD flag has been cleared |
+| **CarePlan** | A valid `ehr` consent is required before a CarePlan FHIR resource may be transmitted for a SUD-flagged participant; no direct FK | Indirect | `consent.participant_id` / `care_plan.participant_id` WHERE `disclosure_recipient_type = 'ehr'` | The CarePlan FHIR outbound adapter (3.8.9) queries this entity for an active, non-expired `ehr` consent before generating or transmitting the FHIR CarePlan resource; absence of a qualifying record emits `CONSENT_CHECK` with outcome `DENIED` and blocks the transmission |
+| **Appointment** | A valid `ehr` consent is required before an Appointment FHIR resource may be transmitted for a SUD-flagged participant; no direct FK | Indirect | `consent.participant_id` / `appointment.participant_id` WHERE `disclosure_recipient_type = 'ehr'` | The Appointment FHIR outbound adapter (3.9.9) applies the same gate as CarePlan; a single active `ehr` consent covers FHIR disclosure for both CarePlan and Appointment in Phase 2 |
+| **MedicationRefill** | A valid `pharmacy` consent is required before a refill where `is_controlled_substance = true` and `Participant.is_sud_record = true` may be transmitted to a pharmacy; no direct FK | Indirect | `consent.participant_id` / `refill.participant_id` WHERE `disclosure_recipient_type = 'pharmacy'` | The MedicationRefill pharmacy transmission adapter (3.10.8) queries this entity before generating or transmitting the FHIR MedicationRequest or NCPDP SCRIPT message; absence of a qualifying record emits `CONSENT_CHECK` with outcome `DENIED` and blocks the transmission |
+| **Reminder** | A valid `push_notification` consent is required before a push notification is delivered to a SUD-flagged participant where `reference_entity_type != 'none'`; no direct FK | Indirect | `consent.participant_id` / `reminder.participant_id` WHERE `disclosure_recipient_type = 'push_notification'` | The Reminder & Tracking delivery adapter (3.11.8) queries this entity before submitting the push payload to APNs or FCM; absence of a qualifying record emits `SUD_DELIVERY_GATE` with outcome `SUPPRESSED` and holds the reminder in `status = 'scheduled'` |
+
+---
+
+#### 3.12.7 Unique Constraints
+
+| Constraint | Fields | Scope | Behavior on Violation |
+|---|---|---|---|
+| `uq_consent_participant_type_active` | `tenant_id`, `participant_id`, `disclosure_recipient_type` WHERE `status = 'active'` | Per tenant (partial index) | Return HTTP 409 with error code `CONSENT_DUPLICATE_ACTIVE`; only one active consent per disclosure type per participant per tenant is permitted at any time |
+
+**Rules:**
+- `uq_consent_participant_type_active` (active uniqueness): A participant may have at most one consent record in `active` status per `disclosure_recipient_type` per tenant at any time. A POST that would create a second active consent of the same type for the same participant within the same tenant is rejected with `409 Conflict` and error code `CONSENT_DUPLICATE_ACTIVE`. The restriction lifts when the prior consent reaches status `withdrawn` or `expired`, at which point a new active consent of the same type may be created. Multiple withdrawn or expired historical consents of the same type for the same participant are permitted and are not subject to this constraint.
+- `CONSENT_INVALID_DATES`: A POST or PATCH that supplies an `expiration_date` that is not strictly after `effective_date` is rejected with `422 Unprocessable Entity` and error code `CONSENT_INVALID_DATES`. A consent period must be a positive duration — `expiration_date` equal to `effective_date` is not permitted.
+- `CONSENT_EXPIRATION_IN_PAST`: A POST that supplies an `expiration_date` at or before the current server UTC date is rejected with `422 Unprocessable Entity` and error code `CONSENT_EXPIRATION_IN_PAST`. A consent cannot be created already expired; the `expiration_date` must allow a future validity window at the time of creation.
+- `CONSENT_MISSING_FORM_REFERENCE`: A POST that does not supply a non-empty `consent_form_reference` is rejected with `422 Unprocessable Entity` and error code `CONSENT_MISSING_FORM_REFERENCE`. A consent record may not be activated without a reference to a signed consent artifact, consistent with the written consent documentation requirement of 42 CFR Part 2 §2.31.
+- `CONSENT_WITHDRAWN_IMMUTABLE`: Any PATCH to a consent record with `status = 'withdrawn'` or `status = 'expired'` is rejected with `422 Unprocessable Entity` and error code `CONSENT_WITHDRAWN_IMMUTABLE`. Terminal consent records are fully immutable — neither their scope fields nor their status may be altered. A new consent record must be created to restore disclosure authorization.
+
+**Implementation:**
+- Database:
+  - Partial unique index `UNIQUE (tenant_id, participant_id, disclosure_recipient_type) WHERE status = 'active'` on the `consent` table enforces the active-uniqueness constraint at the database layer as a backstop
+- Application:
+  - **Active-uniqueness check:** On every POST, the service executes: `SELECT 1 FROM consent WHERE tenant_id = :tenant_id AND participant_id = :participant_id AND disclosure_recipient_type = :disclosure_recipient_type AND status = 'active' LIMIT 1`. A non-empty result returns `409 Conflict` with `CONSENT_DUPLICATE_ACTIVE` before the insert is attempted.
+  - **Date validation:** On every POST and on every PATCH that includes `effective_date` or `expiration_date`, the service validates: (1) `expiration_date` is strictly after `effective_date`; if not, returns `422 Unprocessable Entity` with `CONSENT_INVALID_DATES` before the write is attempted. (2) `expiration_date` is strictly after the current server UTC date; if not, returns `422 Unprocessable Entity` with `CONSENT_EXPIRATION_IN_PAST` before the write is attempted. Both checks run before the write is attempted.
+  - **Form-reference check:** On every POST, the service validates that `consent_form_reference` is present and evaluates to a non-empty string after stripping whitespace. If the check fails, the service returns `422 Unprocessable Entity` with `CONSENT_MISSING_FORM_REFERENCE` before the insert is attempted.
+  - **Immutability check:** On every PATCH, the service reads the current `status`. If `status` is `withdrawn` or `expired`, the service returns `422 Unprocessable Entity` with `CONSENT_WITHDRAWN_IMMUTABLE` before the write is attempted, regardless of which fields the request body contains.
+  - **Disclosure gate query:** At the moment each referencing module (CarePlan, Appointment, MedicationRefill, Reminder) prepares an outbound SUD disclosure, the service executes: `SELECT 1 FROM consent WHERE tenant_id = :tenant_id AND participant_id = :participant_id AND disclosure_recipient_type = :disclosure_recipient_type AND status = 'active' AND effective_date <= CURRENT_DATE AND expiration_date > CURRENT_DATE LIMIT 1`. A non-empty result permits the disclosure; an empty result blocks it and emits the appropriate audit event (`CONSENT_CHECK` with outcome `DENIED` for CarePlan, Appointment, and MedicationRefill adapters; `SUD_DELIVERY_GATE` with outcome `SUPPRESSED` for the Reminder adapter).
+- Error messages exposed to the client:
+  - `CONSENT_DUPLICATE_ACTIVE`: `"An active consent of this type already exists for this participant. The existing consent must be withdrawn or expired before a new one can be created."`
+  - `CONSENT_INVALID_DATES`: `"expiration_date must be strictly after effective_date."`
+  - `CONSENT_EXPIRATION_IN_PAST`: `"expiration_date must be a future date. A consent cannot be created already expired."`
+  - `CONSENT_MISSING_FORM_REFERENCE`: `"A consent form reference is required. The signed consent artifact must be documented before the consent record is activated."`
+  - `CONSENT_WITHDRAWN_IMMUTABLE`: `"A withdrawn or expired consent record cannot be modified. Create a new consent record to restore authorization."`
+
+**Test case targets:**
+- POST a consent with `expiration_date = effective_date` → assert `422` with `CONSENT_INVALID_DATES`
+- POST a consent with `expiration_date` one day before `effective_date` → assert `422` with `CONSENT_INVALID_DATES`
+- POST a consent with `expiration_date` equal to today's date → assert `422` with `CONSENT_EXPIRATION_IN_PAST`
+- POST a consent with `expiration_date` one day in the past → assert `422` with `CONSENT_EXPIRATION_IN_PAST`
+- POST a consent with `effective_date = today` and `expiration_date` one year in the future → assert `201 Created`
+- POST a consent with `effective_date` two days in the past and `expiration_date` one year in the future → assert `201 Created` (past `effective_date` is permitted to accommodate late entry of a signed form)
+- POST a second consent with the same `participant_id` and `disclosure_recipient_type` within the same tenant while a prior consent of that type has `status = 'active'` → assert `409` with `CONSENT_DUPLICATE_ACTIVE`
+- PATCH `status = 'withdrawn'` on the first active consent, then POST a new consent with the same `participant_id` and `disclosure_recipient_type` → assert `201 Created` (active-uniqueness restriction lifts when prior consent reaches `withdrawn`)
+- POST a consent without a `consent_form_reference` field → assert `422` with `CONSENT_MISSING_FORM_REFERENCE`
+- POST a consent with `consent_form_reference = ""` (empty string) → assert `422` with `CONSENT_MISSING_FORM_REFERENCE`
+- POST a consent with `consent_form_reference = "   "` (whitespace only) → assert `422` with `CONSENT_MISSING_FORM_REFERENCE`
+- PATCH any field on a consent with `status = 'withdrawn'` → assert `422` with `CONSENT_WITHDRAWN_IMMUTABLE`
+- PATCH any field on a consent with `status = 'expired'` → assert `422` with `CONSENT_WITHDRAWN_IMMUTABLE`
+- PATCH `status = 'withdrawn'` on an active consent without a `withdrawal_reason` → assert `200`; DB confirms `status = 'withdrawn'` and `withdrawn_at` is non-null (withdrawal reason not required)
+- PATCH `status = 'withdrawn'` with a non-empty `withdrawal_reason` on an active consent → assert `200`; DB confirms `status = 'withdrawn'`, `withdrawn_at` non-null, and `withdrawal_reason` persisted exactly as supplied
+- Attempt a MedicationRefill pharmacy transmission for a participant where `is_sud_record = true` and `is_controlled_substance = true` with no active `pharmacy` consent record in the system for that participant → assert transmission blocked and `CONSENT_CHECK` audit event emitted with outcome `DENIED`
+- Attempt a MedicationRefill pharmacy transmission for a participant where `is_sud_record = true` and `is_controlled_substance = true` with an active `pharmacy` consent whose `expiration_date` has passed → assert transmission blocked and `CONSENT_CHECK` audit event emitted with outcome `DENIED`
+- Attempt a MedicationRefill pharmacy transmission for a participant where `is_sud_record = true` and `is_controlled_substance = true` with an active, non-expired `pharmacy` consent where `effective_date <= today` → assert transmission proceeds and `CONSENT_CHECK` audit event emitted with outcome `ALLOWED`
+- Attempt a CarePlan FHIR transmission for a participant where `is_sud_record = true` with no active `ehr` consent → assert transmission blocked and `CONSENT_CHECK` audit event emitted with outcome `DENIED`
+- Attempt a Reminder push delivery for a participant where `is_sud_record = true` and `reference_entity_type = 'appointment'` with no active `push_notification` consent → assert delivery suppressed, `status` remains `scheduled`, and `SUD_DELIVERY_GATE` audit event emitted with outcome `SUPPRESSED`
+
+---
+
+#### 3.12.8 42 CFR Part 2 Compliance Note
+
+The Consent entity is the regulatory core of the platform's 42 CFR Part 2 disclosure framework. Unlike other entities that carry a Part 2 flag and defer to this entity for gate authorization, the Consent entity defines the authorization boundary itself: no outbound disclosure of SUD-protected information may proceed without an active, non-expired consent record of the matching `disclosure_recipient_type` for the relevant participant. This section documents how the entity fulfills the requirements of 42 CFR Part 2 §2.31 and governs the gate mechanics shared by the four referencing entities.
+
+**§2.31 field mapping:**
+
+| §2.31 Requirement | Satisfied By |
+|---|---|
+| §2.31(a)(1) — Name of patient | `participant_id` → Participant record |
+| §2.31(a)(2) — Name of the disclosing SUD program | Platform identity (system configuration; not a per-record field) |
+| §2.31(a)(3) — Name or title of recipient | `disclosure_recipient_name` + `disclosure_recipient_type` |
+| §2.31(a)(4) — Purpose of the disclosure | `disclosure_purpose` |
+| §2.31(a)(5) — Amount and kind of information | `scope_description` |
+| §2.31(a)(6) — Re-disclosure prohibition notice | Delivered with the signed consent form artifact referenced by `consent_form_reference` |
+| §2.31(a)(7) — Signature of patient or representative | `participant_signature_date` + `consent_method` + `consent_form_reference` |
+| §2.31(a)(8) — Date consent expires | `expiration_date` |
+| §2.31(a)(9) — Date signed | `participant_signature_date` |
+| §2.31(c) — Right to revoke at any time | `status = 'withdrawn'`; no `withdrawal_reason` required |
+
+**Consent gate mechanics:**
+
+The disclosure gate is executed by each referencing module at the moment an outbound disclosure is prepared — not at the moment the source record (CarePlan, Appointment, MedicationRefill, Reminder) is created or updated. This ensures that consent changes (withdrawal, expiration) are reflected immediately in all subsequent disclosure attempts without requiring updates to the clinical records themselves. The gate query checks all of the following conditions simultaneously:
+
+- `Participant.is_sud_record = true` for the relevant participant
+- A consent record exists with `participant_id = :participant_id` AND `tenant_id = :tenant_id` AND `disclosure_recipient_type = :disclosure_recipient_type` AND `status = 'active'` AND `effective_date <= CURRENT_DATE` AND `expiration_date > CURRENT_DATE`
+
+If any condition is not satisfied, the disclosure is blocked. The audit event carries outcome `DENIED` (for `CONSENT_CHECK` events emitted by the CarePlan, Appointment, and MedicationRefill adapters) or `SUPPRESSED` (for `SUD_DELIVERY_GATE` events emitted by the Reminder adapter). All outcomes — permitted and blocked — are audit-logged; the `consent_id` of the matching record is included in the log when the outcome is `ALLOWED`.
+
+**Withdrawal effect:**
+
+Setting `status = 'withdrawn'` on a Consent record is immediate and irrevocable. From the moment `withdrawn_at` is set, the gate query returns no qualifying result for that `disclosure_recipient_type`, and all subsequent disclosure attempts of that type for that participant are blocked. No retroactive effect applies to disclosures already completed under the prior active consent — those are governed by the audit log. A new consent record of the same type may be created at any time after withdrawal; the active-uniqueness constraint in 3.12.7 does not apply to `withdrawn` or `expired` records.
+
+**Audit logging requirement:**
+- Every consent creation must be logged with action type `CONSENT_CREATED`, including `consent_id`, `participant_id`, `tenant_id`, `disclosure_recipient_type`, `effective_date`, `expiration_date`, and `created_by` — `scope_description` must not appear in the audit log payload, as it may contain sensitive SUD treatment context
+- Every withdrawal must be logged with action type `CONSENT_WITHDRAWN`, including `consent_id`, `participant_id`, `tenant_id`, `disclosure_recipient_type`, `withdrawn_at`, and `updated_by`
+- Every expiration transition must be logged with action type `CONSENT_EXPIRED`, including `consent_id`, `participant_id`, `tenant_id`, and the date of expiration
+- Every disclosure gate evaluation must be logged with its outcome (`ALLOWED` or `DENIED`/`SUPPRESSED`), `consent_id` when a qualifying record was found, `disclosure_recipient_type` evaluated, and the identity of the service that triggered the check — regardless of outcome
+
+**Relationship to `Participant.is_sud_record`:**
+
+A consent record for a participant where `is_sud_record = false` produces no gate effect, because Part 2 disclosure controls are not triggered for that participant. The gate query checks `Participant.is_sud_record` first; if `false`, the disclosure proceeds without a consent check and no `CONSENT_CHECK` audit event is required. Changes to `Participant.is_sud_record` are reflected in all subsequent gate evaluations without requiring consent record updates. If `is_sud_record` transitions to `true` after clinical records have already been created, the consent gate applies to all future disclosures of those records from that point forward.
+
+---
+
+> **Pending approval before proceeding to Phase 2 completion.**
 
 ---
 

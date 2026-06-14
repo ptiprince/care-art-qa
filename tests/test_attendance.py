@@ -57,7 +57,7 @@ def test_tc_3_1_positive_attendance_creation_by_program_administrator(
     att_id = body["attendance_id"]
     row = db_session.execute(
         text(
-            "SELECT participant_id, date_of_service, status, version "
+            "SELECT participant_id, date_of_service, status, version, is_deleted "
             "FROM attendance WHERE attendance_id = :aid"
         ),
         {"aid": att_id},
@@ -66,6 +66,7 @@ def test_tc_3_1_positive_attendance_creation_by_program_administrator(
     assert row.participant_id == pid
     assert str(row.date_of_service) == dos_3_1
     assert row.status == "pending"
+    assert not row.is_deleted
 
 
 # ─── TC-3.2 ──────────────────────────────────────────────────────────────────
