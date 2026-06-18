@@ -1,0 +1,477 @@
+# Care Art — Phase 1 Requirements
+Source: requirements_phase1.xlsx | Sheet: Phase 1 Requirements
+Columns: REQ_ID | Requirement Group | Requirement Description | Constraint / Rule Type | Requirement Type | Acceptance Criteria | Regulatory Reference | Priority | Status | Covered In
+
+
+## Participant
+
+### REQ_1.1
+**Group:** Participant
+**Type:** Data Integrity | **Constraint:** Unique Constraint | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid Billing Integrity
+**Covered In:** —
+**Description:** The system must prevent registering a Participant with a Medicaid ID that already exists for another Participant within the same tenant. The duplicate attempt must be rejected at the application layer before any database insert is made.
+**Acceptance Criteria:** When a POST request is made for a new Participant with a Medicaid ID already registered in the same tenant, the system returns HTTP 409 with error code PARTICIPANT_DUPLICATE_MEDICAID_ID and the message "A participant with this Medicaid ID is already registered in this program."
+
+### REQ_1.2
+**Group:** Participant
+**Type:** Security | **Constraint:** RBAC | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(a)(1)
+**Covered In:** —
+**Description:** The system must enforce role-based access control on Participant records. Only staff roles with clinical or administrative responsibilities may read clinical fields. Write access (create and update) is restricted to program_administrator and care_coordinator roles.
+**Acceptance Criteria:** A POST or PATCH request from a physician or participant_family role returns 403 Forbidden. Roles with read access (care_coordinator, nurse_medication_aide, program_administrator, billing_specialist, compliance_officer) can retrieve Participant records. All access denials are recorded in the audit log.
+
+### REQ_1.3
+**Group:** Participant
+**Type:** Regulatory | **Constraint:** 42 CFR Part 2 | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** 42 CFR Part 2 §2.13(b)
+**Covered In:** —
+**Description:** The system must enforce 42 CFR Part 2 access controls on any Participant record where is_sud_record is true. Before any external disclosure of such a record, the system must verify that an explicit patient consent record exists in the system. The is_sud_record flag must not appear in non-privileged API responses.
+**Acceptance Criteria:** When is_sud_record is true, access is limited to nurse_medication_aide and compliance_officer roles for clinical reads. External disclosure without a documented patient consent record is blocked with 403 Forbidden. An unauthorized role request returns 403 with no indication that a Part 2 flag exists on the record.
+
+### REQ_1.4
+**Group:** Participant
+**Type:** Regulatory | **Constraint:** Audit Logging | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b); SOC 2 CC7.2
+**Covered In:** —
+**Description:** The system must generate an immutable audit log entry for every read or write operation on a Participant record. Log entries must include timestamp, user ID, tenant ID, action type, record ID, and field names accessed or changed. PHI values must never appear in log payloads.
+**Acceptance Criteria:** After any PHI read or write on a Participant record, a corresponding audit event is present in the log with all mandatory fields from Section 2.6.1. No PHI values appear in the payload. Denied access attempts are recorded with outcome DENIED. Audit records are retained for a minimum of 6 years.
+
+### REQ_1.5
+**Group:** Participant
+**Type:** Functional | **Constraint:** State Machine | **Priority:** Medium | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care Licensing
+**Covered In:** —
+**Description:** The system must enforce the allowed program_status state machine transitions for a Participant. Valid transitions are: active → on_leave, active → discharged, active → deceased, on_leave → active, on_leave → discharged. Transitions that skip states or move backward are not permitted.
+**Acceptance Criteria:** A PATCH request setting program_status to a disallowed transition (e.g., discharged → active) returns 422 Unprocessable Entity. A valid transition succeeds and is reflected in the response. Transitioning to discharged automatically sets discharge_date to the current date if not supplied.
+
+### REQ_1.6
+**Group:** Participant
+**Type:** Functional | **Constraint:** State Machine | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care Licensing
+**Covered In:** —
+**Description:** When a Participant is first registered, enrollment_date must be populated and program_status must be set to active. When status transitions to discharged or deceased, discharge_date must be automatically set to the current UTC date if not provided by the caller. A Participant with program_status of discharged or deceased must be blocked from generating new Attendance, MARRecord, or Incident records.
+**Acceptance Criteria:** A POST creating a Participant without enrollment_date returns 400 Bad Request. A PATCH transitioning status to discharged without a discharge_date automatically sets discharge_date to today. A POST to create an Attendance, MARRecord, or Incident record for a participant whose program_status is discharged or deceased returns 422 with an error indicating the participant is not actively enrolled.
+
+### REQ_1.7
+**Group:** Participant
+**Type:** Functional | **Constraint:** Field Validation | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid/Medicare
+**Covered In:** —
+**Description:** The system must require mandatory fields on Participant creation: first_name, last_name, date_of_birth, medicaid_id, enrollment_date, and program_status. The system must validate that medicaid_id matches the expected format and that date_of_birth is a valid past date.
+**Acceptance Criteria:** A POST missing any mandatory field returns 400 Bad Request identifying the missing fields. A POST with a malformed medicaid_id or a future date_of_birth returns 400 with a descriptive validation error. A valid request with all mandatory fields succeeds and returns 201 Created.
+
+### REQ_1.8
+**Group:** Participant
+**Type:** Regulatory | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.530(j) — Record Retention
+**Covered In:** —
+**Description:** The system must never permanently delete a Participant record. Removal must be implemented as a soft delete by setting is_deleted to true. Soft-deleted records must be excluded from standard queries but must remain accessible to compliance_officer and audit tooling for the full HIPAA retention period.
+**Acceptance Criteria:** A DELETE request on a Participant record sets is_deleted to true and returns 200. A subsequent GET on the same participant_id by a standard role returns 404. A compliance_officer audit query returns the record with is_deleted = true. The record and all its audit log references remain in the database.
+
+### REQ_1.9
+**Group:** Participant
+**Type:** Regulatory | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.530(j) — Record Retention
+**Covered In:** —
+**Description:** All standard Participant API queries must filter out records where is_deleted is true. The is_deleted field must default to false on creation, must be indexed on the participants table, and a hard-delete (physical row removal) must be blocked at the application layer regardless of the caller's role. Only a compliance_officer using a designated audit endpoint may retrieve soft-deleted records, and such queries must be audit-logged.
+**Acceptance Criteria:** A GET /participants list response never includes records where is_deleted = true. A DELETE request that would cause physical row removal returns 405 Method Not Allowed. A compliance_officer GET on a designated audit endpoint with include_deleted=true returns soft-deleted records with is_deleted = true. Each such query generates an audit event.
+
+### REQ_1.10
+**Group:** Participant
+**Type:** Data Integrity | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b) — Data Integrity
+**Covered In:** —
+**Description:** All write operations on a Participant record must include the current version value. If the submitted version does not match the version stored in the database at the time of the update, the system must reject the request to prevent overwriting concurrent edits.
+**Acceptance Criteria:** A PATCH on a Participant record with a stale version value returns HTTP 409 Conflict with error code PARTICIPANT_VERSION_CONFLICT. A PATCH with the correct current version succeeds and the response includes version incremented by 1. Two concurrent PATCHes with the same initial version result in one 200 and one 409.
+
+
+## User
+
+### REQ_2.1
+**Group:** User
+**Type:** Data Integrity | **Constraint:** Unique Constraint | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.308(a)(3)
+**Covered In:** —
+**Description:** The system must prevent creating a User account with an email address that already exists for another User within the same tenant. The duplicate attempt must be rejected at the application layer before any database insert. The same email in a different tenant must be accepted.
+**Acceptance Criteria:** A POST request for a User with an email already registered in the same tenant returns HTTP 409 with error code USER_DUPLICATE_EMAIL and the message "An account with this email address already exists in this program." A POST with the same email in a different tenant returns 201 Created.
+
+### REQ_2.2
+**Group:** User
+**Type:** Data Integrity | **Constraint:** Unique Constraint | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b) — Audit Controls
+**Covered In:** —
+**Description:** The system must assign a globally unique UUID as user_id to every new User record. This identifier must persist for the lifetime of the account and must never be reused or changed after account creation, even after deactivation, to preserve audit trail integrity across all PHI records.
+**Acceptance Criteria:** No two User records across any tenant share a user_id. The user_id is present as the stable identifier on all audit log entries and PHI record created_by / updated_by fields. Deactivating a user does not change or remove user_id. A deliberate POST with a pre-supplied duplicate user_id returns 409.
+
+### REQ_2.3
+**Group:** User
+**Type:** Security | **Constraint:** RBAC | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(a)(1); SOC 2 CC6.3
+**Covered In:** —
+**Description:** The system must enforce role-based access control by evaluating tenant_id, status, and role in that order on every authenticated request. A user with a mismatched tenant_id, an inactive or suspended status, or an insufficient role must be denied before reaching application logic.
+**Acceptance Criteria:** A request from an inactive or suspended user returns 403 Forbidden before role is evaluated. A request from an active user whose tenant_id does not match the resource tenant returns 403. A request from an active user in the correct tenant but with insufficient role returns 403. All denials are recorded in the audit log.
+
+### REQ_2.4
+**Group:** User
+**Type:** Security | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(d); NIST SP 800-63B
+**Covered In:** —
+**Description:** The system must require multi-factor authentication (MFA) for all User roles with PHI access. MFA enrollment must be completed before such a user can access any clinical or administrative module beyond account setup. The participant_family role is exempt from mandatory MFA.
+**Acceptance Criteria:** A user with role nurse_medication_aide, care_coordinator, billing_specialist, compliance_officer, physician, or program_administrator who has not enrolled MFA is redirected to MFA setup on first login and blocked from PHI modules until enrollment is complete. A participant_family user can access the read-only portal without MFA.
+
+### REQ_2.5
+**Group:** User
+**Type:** Security | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(d); SOC 2 CC6.1
+**Covered In:** —
+**Description:** The system must lock a User account after 5 consecutive failed login attempts. The lockout must persist for at least 30 minutes, after which the account automatically unlocks. The failed_login_count must reset to zero on every successful login.
+**Acceptance Criteria:** After 5 failed logins, locked_until is set to 30 minutes from the fifth failure and the response is 401 indicating the account is locked. Attempts during the lockout return 401 regardless of credential validity. After 30 minutes, a valid login succeeds and failed_login_count is reset to 0.
+
+### REQ_2.6
+**Group:** User
+**Type:** Security | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(d); NIST SP 800-63B
+**Covered In:** —
+**Description:** The account lockout state must be stored persistently in the database via the locked_until field and must survive server restarts and session invalidation. Login attempts against a locked account must be denied regardless of the credentials supplied. The error response must not reveal the exact locked_until timestamp or remaining lockout duration to prevent timing-based reconnaissance.
+**Acceptance Criteria:** A locked account (locked_until > current UTC time) returns 401 on all login attempts even after a server restart. After locked_until elapses, the next valid login succeeds and resets failed_login_count to 0. The 401 response body contains only a generic lockout message and does not include the locked_until timestamp or remaining seconds.
+
+### REQ_2.7
+**Group:** User
+**Type:** Functional | **Constraint:** State Machine | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.308(a)(3)(ii)(C)
+**Covered In:** —
+**Description:** The system must enforce the User status state machine. Valid transitions are: pending_activation → active, active → inactive, active → suspended, suspended → active, suspended → inactive. User records must never be hard-deleted; deactivation is the only supported offboarding action.
+**Acceptance Criteria:** A PATCH to a disallowed transition (e.g., inactive → suspended directly) returns 422 Unprocessable Entity. Transitioning to inactive sets deactivated_at to the current UTC timestamp. User records remain in the database indefinitely after deactivation. A DELETE request on a User returns 405 Method Not Allowed.
+
+### REQ_2.8
+**Group:** User
+**Type:** Regulatory | **Constraint:** Audit Logging | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b); SOC 2 CC7.2
+**Covered In:** —
+**Description:** The system must generate an audit log entry for every authentication event (success and failure), every change to a User record, and every access denial. Audit entries must include user_id, tenant_id, session_id, source IP, timestamp, action type, and outcome.
+**Acceptance Criteria:** A successful login generates an AUTH_SUCCESS event. A failed login generates AUTH_FAILURE. Any change to a User record (role, status, password) generates a PHI_WRITE event listing field names changed without values. All audit events include all mandatory fields from Section 2.6.1 and are retained for a minimum of 6 years.
+
+### REQ_2.9
+**Group:** User
+**Type:** Security | **Constraint:** Field Validation | **Priority:** Medium | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.308(a)(5); NIST SP 800-63B
+**Covered In:** —
+**Description:** The system must store User passwords exclusively as a bcrypt or Argon2id hash. Plaintext passwords must never be stored, logged, or returned in any response. The system must enforce a 90-day password rotation policy and automatically set status to inactive for accounts with no login in 90 days.
+**Acceptance Criteria:** The password_hash field contains only a valid bcrypt or Argon2id hash; no plaintext ever appears in storage or logs. A login with a password unchanged for more than 90 days prompts a mandatory password reset before access is granted. An account with last_login_at older than 90 days is automatically transitioned to status inactive.
+
+### REQ_2.10
+**Group:** User
+**Type:** Security | **Constraint:** Field Validation | **Priority:** Medium | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.308(a)(5); NIST SP 800-63B
+**Covered In:** —
+**Description:** The system must enforce a 90-day password rotation policy by recording password_changed_at on every successful password change. A login attempt where the password age exceeds 90 days must be denied and the user redirected to a mandatory reset flow. A new password that matches any of the user's previous five stored hashes must be rejected to prevent rotation cycling.
+**Acceptance Criteria:** A login where (current_date − password_changed_at) > 90 days returns 403 with error code PASSWORD_EXPIRED and redirects to a forced reset flow. A password reset attempt matching one of the last 5 stored hashes returns 422 with error code PASSWORD_REUSE_PROHIBITED. A valid new password is accepted and password_changed_at is updated to the current UTC timestamp.
+
+### REQ_2.11
+**Group:** User
+**Type:** Security | **Constraint:** Business Rule | **Priority:** Medium | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.308(a)(3)(ii)(C); SOC 2 CC6.2
+**Covered In:** —
+**Description:** The system must automatically deactivate User accounts that have not logged in for 90 consecutive days. A scheduled job must run daily, identify all active Users where last_login_at is earlier than 90 days ago, and transition each to status inactive. Each auto-deactivation must be recorded in the audit log and must require a program_administrator to manually reinstate the account.
+**Acceptance Criteria:** A daily automated job sets status = inactive for all Users with status = active and last_login_at < (today − 90 days). Each transition generates an audit event with action_type ACCOUNT_AUTO_DEACTIVATED. An auto-deactivated account cannot log in. A program_administrator PATCH setting status to active successfully reactivates the account.
+
+### REQ_2.12
+**Group:** User
+**Type:** Data Integrity | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b) — Data Integrity
+**Covered In:** —
+**Description:** All write operations on a User record must include the current version value. If the submitted version does not match the database version, the update must be rejected to prevent overwriting concurrent edits, including concurrent role changes or status transitions made by different administrators.
+**Acceptance Criteria:** A PATCH on a User record with a stale version returns HTTP 409 Conflict with error code USER_VERSION_CONFLICT. A PATCH with the correct version succeeds and increments version by 1. Two concurrent PATCHes with the same version value result in one 200 and one 409.
+
+
+## Attendance
+
+### REQ_3.1
+**Group:** Attendance
+**Type:** Data Integrity | **Constraint:** Unique Constraint | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid Billing Integrity
+**Covered In:** —
+**Description:** The system must prevent creating more than one Attendance record for the same participant on the same date of service within a tenant. The duplicate attempt must be rejected at the application layer before any database insert to protect billing integrity.
+**Acceptance Criteria:** A POST creating an Attendance record for a participant_id and date_of_service already present in the same tenant returns HTTP 409 with error code ATTENDANCE_DUPLICATE_DATE and the message "An attendance record for this participant already exists for the selected date of service."
+
+### REQ_3.2
+**Group:** Attendance
+**Type:** Security | **Constraint:** RBAC | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(a)(1)
+**Covered In:** —
+**Description:** The system must restrict write access to Attendance records to program_administrator and care_coordinator roles. Read access must be granted to billing_specialist and compliance_officer in addition to writers. The participant_family and physician roles must not access Attendance records.
+**Acceptance Criteria:** A POST or PATCH from a billing_specialist, physician, or participant_family role returns 403 Forbidden. A GET from an authorized role (program_administrator, care_coordinator, billing_specialist, compliance_officer) returns the record. All access denials are recorded in the audit log.
+
+### REQ_3.3
+**Group:** Attendance
+**Type:** Functional | **Constraint:** State Machine | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid/Medicare Billing
+**Covered In:** —
+**Description:** The system must enforce the Attendance status state machine. Valid transitions are: pending → confirmed, confirmed → billed (system-initiated when a Claim references the record), confirmed → voided, billed → voided. Any edit to a confirmed record must automatically revert its status to pending and require re-confirmation.
+**Acceptance Criteria:** Editing a confirmed Attendance record automatically resets status to pending. Only confirmed records may be referenced in Claim creation; including a pending or voided record in a Claim returns 422. A voided record cannot be transitioned back to any active status. Invalid transitions return 422.
+
+### REQ_3.4
+**Group:** Attendance
+**Type:** Functional | **Constraint:** Field Validation | **Priority:** Medium | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid Billing Integrity
+**Covered In:** —
+**Description:** The system must require a void_reason when transitioning an Attendance record status to voided. A void operation submitted without a reason must be rejected. Voided records must be permanently blocked from inclusion in any Claim.
+**Acceptance Criteria:** A PATCH setting status to voided without void_reason returns 422 Unprocessable Entity. A Claim creation request referencing an attendance_id with status voided returns 422. A valid void request with void_reason present succeeds and returns 200.
+
+### REQ_3.5
+**Group:** Attendance
+**Type:** Regulatory | **Constraint:** Audit Logging | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b); CMS 10-yr Retention
+**Covered In:** —
+**Description:** The system must generate an immutable audit log entry for every create, update, confirmation, and void operation on an Attendance record. Log entries must include timestamp, user_id, tenant_id, action type, attendance_id, and field names changed. PHI values must never appear in log payloads.
+**Acceptance Criteria:** After any write on an Attendance record, a corresponding audit event exists in the log with all mandatory fields from Section 2.6.1. The data_affected field lists field names only. Denied access attempts produce an ACCESS_DENIED event. Billing-related audit records are retained for a minimum of 10 years per CMS requirements.
+
+### REQ_3.6
+**Group:** Attendance
+**Type:** Functional | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid/Medicare; EDI X12 837
+**Covered In:** —
+**Description:** The system must automatically derive authorized_units_consumed from total_hours at sign-out using the payer-specific unit definition configured for the participant's primary payer. For Medicaid programs billing in 15-minute increments, 1 unit equals 0.25 hours. For Medicare daily-rate programs, 1 unit equals 1 day regardless of total hours attended. The calculation must repeat whenever sign_in_time or sign_out_time is edited on a non-billed record.
+**Acceptance Criteria:** On sign-out for a Medicaid participant attending 6 hours, authorized_units_consumed is set to 24 (6 ÷ 0.25). On sign-out for a Medicare daily-rate participant, authorized_units_consumed is set to 1.00 regardless of total_hours. Editing sign_in_time on a pending Attendance record triggers recalculation of total_hours and authorized_units_consumed. Editing a billed record returns 422.
+
+### REQ_3.7
+**Group:** Attendance
+**Type:** Functional | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid Billing Integrity
+**Covered In:** —
+**Description:** A void operation on an Attendance record with status billed must be blocked until the referencing Claim has been voided or rejected first. Only a program_administrator may void a confirmed or billed Attendance record. The void must be an explicit PATCH action and cannot be triggered implicitly by another operation.
+**Acceptance Criteria:** A PATCH to void an Attendance record with status billed while the referencing Claim has status accepted or paid returns 422. A void PATCH by a care_coordinator returns 403 Forbidden. A program_administrator void PATCH on a confirmed record with a valid void_reason returns 200. The void event is recorded in the audit log with the program_administrator's user_id.
+
+### REQ_3.8
+**Group:** Attendance
+**Type:** Data Integrity | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b) — Data Integrity
+**Covered In:** —
+**Description:** All write operations on an Attendance record must include the current version value. If the submitted version does not match the database version, the update must be rejected. The 409 conflict must be surfaced to the caller, who must re-fetch the current record and resubmit.
+**Acceptance Criteria:** A PATCH on an Attendance record with a stale version returns HTTP 409 Conflict with error code ATTENDANCE_VERSION_CONFLICT. A PATCH with the correct version succeeds, version increments by 1, and — if the record was confirmed — status reverts to pending. Two concurrent edits with the same version result in one success and one 409.
+
+
+## Claim
+
+### REQ_4.1
+**Group:** Claim
+**Type:** Data Integrity | **Constraint:** Unique Constraint | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid/Medicare; EDI X12 837
+**Covered In:** —
+**Description:** The system must ensure that every Claim has a globally unique claim_reference_number across all tenants. If the generation algorithm produces a collision, the system must automatically retry with an incremented sequence value without surfacing the collision as a user error.
+**Acceptance Criteria:** No two Claim records across any tenant share the same claim_reference_number. When the system-generated reference number already exists, the system silently retries and produces a unique value before returning 201. A manual POST with a duplicate claim_reference_number returns 409 with error code CLAIM_DUPLICATE_REFERENCE.
+
+### REQ_4.2
+**Group:** Claim
+**Type:** Data Integrity | **Constraint:** Unique Constraint | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid/Medicare Anti-Fraud
+**Covered In:** —
+**Description:** The system must prevent duplicate billing by rejecting any Claim where the combination of participant_id, date_of_service_start, procedure_code, and payer_type already exists for an active claim within the same tenant, regardless of billed units or amount.
+**Acceptance Criteria:** A POST for a Claim with the same participant_id, date_of_service_start, procedure_code, and payer_type as an existing claim in the tenant returns HTTP 409 with error code CLAIM_DUPLICATE and the message "A claim for this participant, date of service, procedure, and payer already exists."
+
+### REQ_4.3
+**Group:** Claim
+**Type:** Security | **Constraint:** RBAC | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(a)(1); CMS Billing
+**Covered In:** —
+**Description:** The system must restrict Claim creation and status updates to the billing_specialist and program_administrator roles. Read access must be granted to compliance_officer. All other roles, including care_coordinator and nurse_medication_aide, must not access Claim records.
+**Acceptance Criteria:** A POST or PATCH from a care_coordinator, nurse_medication_aide, physician, or participant_family role returns 403 Forbidden. A billing_specialist can create, update, and submit claims. A compliance_officer can read claims but not modify them. All access denials are recorded in the audit log.
+
+### REQ_4.4
+**Group:** Claim
+**Type:** Functional | **Constraint:** State Machine | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid/Medicare; EDI X12 835
+**Covered In:** —
+**Description:** The system must enforce the Claim status state machine. Valid transitions are: draft → submitted, submitted → accepted, submitted → rejected, accepted → paid. A submitted or paid Claim must not be updated in place; corrections require voiding and creating a new Claim.
+**Acceptance Criteria:** A PATCH on a submitted or paid Claim returns 422 for any field update other than an allowed status transition. The transition from rejected does not allow direct resubmission; a new Claim must be created. Transitioning to accepted sets submission_date and transitioning to paid sets remittance_date automatically if not supplied.
+
+### REQ_4.5
+**Group:** Claim
+**Type:** Functional | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid Billing Integrity
+**Covered In:** —
+**Description:** The system must enforce the business rule that Claims may only reference Attendance records with status confirmed. Any Claim creation request referencing an Attendance record that is pending, voided, or billed must be rejected. On successful Claim creation, all referenced Attendance records must be automatically set to billed.
+**Acceptance Criteria:** A POST Claim that references an attendance_id with status pending or voided returns 422 Unprocessable Entity identifying the invalid reference. A POST Claim that references a billed attendance_id (already claimed) also returns 422. On 201 success, all referenced Attendance records show status billed.
+
+### REQ_4.6
+**Group:** Claim
+**Type:** Regulatory | **Constraint:** Audit Logging | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b); CMS 10-yr Retention
+**Covered In:** —
+**Description:** The system must generate an immutable audit log entry for every Claim creation, status transition, and clearinghouse submission event. Each log entry must include timestamp, user_id, tenant_id, claim_id, action type, and field names changed. PHI values must never appear in log payloads.
+**Acceptance Criteria:** After any write on a Claim record, an audit event with all mandatory fields exists in the log. Clearinghouse submission generates a PHI_DISCLOSE event identifying the destination system. Billing audit records are retained for a minimum of 10 years per CMS requirements, overriding the standard 6-year HIPAA minimum.
+
+### REQ_4.7
+**Group:** Claim
+**Type:** Functional | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** CMS Medicaid Billing Integrity
+**Covered In:** —
+**Description:** A Claim record must always be generated from at least one referenced Attendance record; an empty attendance_ids array must be rejected. The system must compute units_billed as the sum of authorized_units_consumed across all referenced Attendance records and must override any caller-supplied units_billed value with this calculated total to prevent billing manipulation.
+**Acceptance Criteria:** A POST Claim with an empty attendance_ids array returns 422 with error code CLAIM_NO_ATTENDANCE_RECORDS. A POST with at least one confirmed Attendance record succeeds. If the request body supplies a units_billed that does not match the calculated sum, the system overwrites it with the correct value and returns 201 with the corrected units_billed in the response body.
+
+### REQ_4.8
+**Group:** Claim
+**Type:** Functional | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** Phase 1 API Contract
+**Covered In:** —
+**Description:** The Phase 1 Claim API must reject any POST or PATCH request body that contains a Phase 2 deferred field: secondary_payer_id, secondary_claim_reference_number, secondary_amount, mco_id, prior_authorization_number, or adjustment_reason_codes. This prevents accidental partial population of Phase 2 data structures in the Phase 1 schema.
+**Acceptance Criteria:** A POST Claim body containing secondary_payer_id or any other Phase 2 deferred field returns 400 Bad Request identifying the unsupported field name. A POST body without any Phase 2 fields and otherwise valid returns 201. The field-presence validation must occur before any database operation so that no partial data is written.
+
+### REQ_4.9
+**Group:** Claim
+**Type:** Data Integrity | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b) — Data Integrity
+**Covered In:** —
+**Description:** All write operations on a Claim record must include the current version value. If the submitted version does not match the database version, the update must be rejected. Because submitted and paid Claims are already immutable to field edits, the version conflict check applies primarily to draft Claims.
+**Acceptance Criteria:** A PATCH on a draft Claim with a stale version returns HTTP 409 Conflict with error code CLAIM_VERSION_CONFLICT. A PATCH with the correct version succeeds and increments version by 1. A PATCH on a submitted or paid Claim returns 422 (state machine violation) before the version check is reached; 422 takes precedence over 409.
+
+
+## MARRecord
+
+### REQ_5.1
+**Group:** MARRecord
+**Type:** Data Integrity | **Constraint:** Unique Constraint | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care Licensing; HIPAA
+**Covered In:** —
+**Description:** The system must prevent creating more than one MARRecord for the same participant, medication, and scheduled administration time within a tenant. A duplicate administration event must be rejected at the application layer before any database insert.
+**Acceptance Criteria:** A POST for a MARRecord with the same participant_id, medication_name, and scheduled_time as an existing record in the tenant returns HTTP 409 with error code MAR_DUPLICATE_EVENT and the message "A medication administration record for this participant, medication, and scheduled time already exists."
+
+### REQ_5.2
+**Group:** MARRecord
+**Type:** Security | **Constraint:** RBAC | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(a)(1); State MAR Regulations
+**Covered In:** —
+**Description:** The system must restrict all write operations on MARRecord to users with the nurse_medication_aide role. Any create or update request from any other role must be rejected at the application service layer, independently of the API Gateway RBAC check. Read access is permitted to nurse_medication_aide, care_coordinator, program_administrator, and compliance_officer.
+**Acceptance Criteria:** A POST or PATCH on a MARRecord from a care_coordinator, billing_specialist, program_administrator, or physician role returns 403 Forbidden. A nurse_medication_aide can create and update MARRecords. A compliance_officer can read MARRecords but not create or modify them. The role check at the service layer is enforced even if the API Gateway check passes.
+
+### REQ_5.3
+**Group:** MARRecord
+**Type:** Regulatory | **Constraint:** 42 CFR Part 2 | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** 42 CFR Part 2 §2.31; HIPAA
+**Covered In:** —
+**Description:** The system must apply 42 CFR Part 2 access controls to any MARRecord where is_controlled_substance is true. Access must be limited to nurse_medication_aide and compliance_officer roles. Unauthorized access requests must return 403 without confirming the existence of the record. No external disclosure of such a record is permitted without an explicit patient consent record in the system.
+**Acceptance Criteria:** A GET for a MARRecord where is_controlled_substance is true from a care_coordinator or program_administrator role returns 403 Forbidden with no information about the record content or existence. The is_controlled_substance flag does not appear in non-privileged API responses. External disclosure blocked without documented patient consent returns 403.
+
+### REQ_5.4
+**Group:** MARRecord
+**Type:** Regulatory | **Constraint:** Audit Logging | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+**Covered In:** —
+**Description:** The system must generate an immutable audit log entry for every read and write operation on a MARRecord where is_controlled_substance is true. The audit event must be emitted before the response is returned and must include user_id, tenant_id, mar_id, action type, timestamp, and outcome. Failed access attempts must also be logged.
+**Acceptance Criteria:** Every PHI_READ or PHI_WRITE on a controlled substance MARRecord produces an audit event before the API response is returned. Access denied attempts generate an ACCESS_DENIED event. Audit events include all mandatory fields from Section 2.6.1. The logging pipeline is non-bypassable: it cannot be skipped under any load or error condition.
+
+### REQ_5.5
+**Group:** MARRecord
+**Type:** Functional | **Constraint:** Field Validation | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care MAR Requirements
+**Covered In:** —
+**Description:** The system must validate the MARRecord status field and enforce associated field rules: status administered requires administered_time to be non-null; status refused or held requires a non-null notes field to document clinical rationale; status missed sets administered_time to null.
+**Acceptance Criteria:** A POST or PATCH with status administered and a null administered_time returns 422 Unprocessable Entity. A POST or PATCH with status refused or held and a null notes field returns 422 with an error stating that clinical rationale is required. A valid administered record with administered_time set returns 201 or 200.
+
+### REQ_5.6
+**Group:** MARRecord
+**Type:** Functional | **Constraint:** Field Validation | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care MAR Requirements
+**Covered In:** —
+**Description:** When MARRecord status is administered, administered_time must be a TIMESTAMPTZ value that falls no earlier than 2 hours before scheduled_time and no later than the current UTC time at submission. A null value, a future timestamp, or a value more than 2 hours before scheduled_time must each be individually rejected.
+**Acceptance Criteria:** A POST with status administered and administered_time = null returns 422. A POST with administered_time set to a future UTC timestamp returns 422 with error ADMIN_TIME_FUTURE. A POST with administered_time more than 2 hours before scheduled_time returns 422 with error ADMIN_TIME_TOO_EARLY. A POST with a valid past administered_time within the allowed window returns 201.
+
+### REQ_5.7
+**Group:** MARRecord
+**Type:** Functional | **Constraint:** Field Validation | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care MAR Requirements
+**Covered In:** —
+**Description:** The route field on MARRecord is mandatory and must contain exactly one of three allowed values: oral, injection, or topical. Any other value, including null or an empty string, must be rejected. A route value may not be changed on an administered record, consistent with the general immutability rule for administered MARRecords.
+**Acceptance Criteria:** A POST with route = intravenous or any value outside the allowed enum returns 400 Bad Request identifying route as invalid. A POST with a null or absent route field returns 400. A POST with route = oral, injection, or topical returns 201. A PATCH changing route on an administered record returns 422 (immutability violation) before field validation is evaluated.
+
+### REQ_5.8
+**Group:** MARRecord
+**Type:** Data Integrity | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care MAR Requirements; HIPAA
+**Covered In:** —
+**Description:** The system must prevent editing a MARRecord once its status is set to administered. An administered record is immutable. Corrections must be made by creating a new correction record referencing the original mar_id, not by updating the original record.
+**Acceptance Criteria:** A PATCH on a MARRecord with status administered returns 422 Unprocessable Entity. A new correction MARRecord referencing the original mar_id can be created by a nurse_medication_aide and returns 201. The original administered record remains unchanged in the database and in the audit log.
+
+### REQ_5.9
+**Group:** MARRecord
+**Type:** Data Integrity | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care MAR Requirements; HIPAA Record Integrity
+**Covered In:** —
+**Description:** A correction MARRecord must be created by a nurse_medication_aide, must include the original mar_id in the notes field, must have a non-null notes field of at least 20 characters describing the correction reason, and must carry a new valid scheduled_time or administered_time distinct from the original. The original administered record must not be marked superseded or deleted.
+**Acceptance Criteria:** A POST correction MARRecord with notes absent or fewer than 20 characters returns 422 with error MAR_CORRECTION_NOTES_REQUIRED. A POST that does not reference the original mar_id in notes returns 422 with error MAR_CORRECTION_ORIGINAL_REF_MISSING. A valid correction POST returns 201. The original administered MARRecord remains status = administered with version unchanged.
+
+### REQ_5.10
+**Group:** MARRecord
+**Type:** Data Integrity | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b) — Data Integrity
+**Covered In:** —
+**Description:** All write operations on a MARRecord must include the current version value. If the submitted version does not match the database version, the update must be rejected. Because administered MARRecords are already immutable, the version conflict check applies to records with status refused, held, or missed.
+**Acceptance Criteria:** A PATCH on a non-administered MARRecord with a stale version returns HTTP 409 Conflict with error code MAR_VERSION_CONFLICT. A PATCH with the correct version succeeds and increments version by 1. A PATCH on an administered record returns 422 (immutability) before the version check; 422 takes precedence over 409.
+
+
+## Incident
+
+### REQ_6.1
+**Group:** Incident
+**Type:** Data Integrity | **Constraint:** Unique Constraint | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care Licensing; Architecture §3.6.7
+**Covered In:** —
+**Description:** The incident_id UUID is the only unique constraint on the Incident entity. The system must not enforce any composite unique constraint on participant_id, incident_date, or incident_type, because a participant may have multiple distinct incidents on the same date and of the same type, each requiring independent regulatory documentation and a separate lifecycle. The incident_id must always be generated server-side.
+**Acceptance Criteria:** Two POST requests for the same participant_id, incident_date, and incident_type each return 201 with distinct incident_ids, confirming no composite key constraint exists. A POST with a client-supplied incident_id that already exists returns 409 Conflict. The system treats each incident as an independent record with its own status lifecycle and regulatory tracking.
+
+### REQ_6.2
+**Group:** Incident
+**Type:** Security | **Constraint:** RBAC | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(a)(1); State Licensing
+**Covered In:** —
+**Description:** The system must allow any authenticated staff role to create an Incident record. Read access must be granted to care_coordinator, nurse_medication_aide, program_administrator, and compliance_officer. The participant_family and physician roles must not be permitted to read or write Incident records.
+**Acceptance Criteria:** A POST Incident from any staff role (program_administrator, care_coordinator, nurse_medication_aide, billing_specialist) returns 201. A GET from a physician or participant_family role returns 403 Forbidden. A compliance_officer can read all incidents, including escalated and SUD-related records. All access denials are recorded in the audit log.
+
+### REQ_6.3
+**Group:** Incident
+**Type:** Regulatory | **Constraint:** 42 CFR Part 2 | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** 42 CFR Part 2 §2.13(b)
+**Covered In:** —
+**Description:** The system must apply 42 CFR Part 2 access controls to any Incident where is_sud_related is true. Read and write access must be limited to care_coordinator, nurse_medication_aide, and compliance_officer. Unauthorized access must return 403 without confirming the record exists. List-view responses must redact description and incident_type for unauthorized roles.
+**Acceptance Criteria:** A GET for an Incident where is_sud_related is true from a billing_specialist or program_administrator returns 403 Forbidden with no record details. In list responses to unauthorized roles, description and incident_type are absent for SUD-related incidents. The is_sud_related flag does not appear in non-privileged API responses.
+
+### REQ_6.4
+**Group:** Incident
+**Type:** Regulatory | **Constraint:** Audit Logging | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+**Covered In:** —
+**Description:** The system must generate an immutable audit log entry for every read and write operation on an Incident record where is_sud_related is true. Events must include user_id, tenant_id, incident_id, action type (PHI_READ, PHI_WRITE, or ACCESS_DENIED), timestamp, outcome, and field names changed. PHI values must never appear in log payloads.
+**Acceptance Criteria:** Every PHI_READ on a SUD-related Incident produces an audit event before the response is returned. Every PHI_WRITE lists data_affected with field names only, no values. ACCESS_DENIED events are produced for every unauthorized attempt. All audit records are immutable and retained for a minimum of 6 years.
+
+### REQ_6.5
+**Group:** Incident
+**Type:** Functional | **Constraint:** State Machine | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care Licensing; 24-hr Notification Rule
+**Covered In:** —
+**Description:** The system must enforce the Incident status state machine. Standard incidents follow: draft → submitted → closed. When severity is severe or incident_type is medical_emergency, the system must automatically transition status to escalated on submission and block the closed transition until regulatory_submission_date is set.
+**Acceptance Criteria:** Submitting an incident with severity severe automatically sets status to escalated. A PATCH setting status to closed on an escalated incident without regulatory_submission_date returns 422 with error code INCIDENT_MISSING_REGULATORY_SUBMISSION. A minor, non-emergency incident follows draft → submitted → closed without auto-escalation.
+
+### REQ_6.6
+**Group:** Incident
+**Type:** Regulatory | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care Licensing; 24-hr Rule
+**Covered In:** —
+**Description:** The system must generate an alert when an escalated Incident has no regulatory_submission_date and was created more than 20 hours ago, providing a 4-hour operational buffer before the mandatory 24-hour state notification deadline expires.
+**Acceptance Criteria:** An automated job runs at least once per hour and identifies all escalated Incidents where regulatory_submission_date is null and created_at is more than 20 hours ago. Each such Incident triggers an alert to compliance_officer and program_administrator. The alert generation event is recorded in the audit log.
+
+### REQ_6.7
+**Group:** Incident
+**Type:** Data Integrity | **Constraint:** Business Rule | **Priority:** Medium | **Status:** Draft
+**Regulatory Reference:** State Adult Day Care Licensing; HIPAA Record Integrity
+**Covered In:** —
+**Description:** The system must prevent editing a closed Incident record. Once status is set to closed, the record is immutable. Any additional information must be submitted as a new Incident record or a formally documented addendum that references the original incident_id.
+**Acceptance Criteria:** A PATCH on an Incident with status closed returns 422 Unprocessable Entity. Creating a new Incident that references the original incident_id as an addendum is accepted and returns 201. The original closed Incident remains unchanged in both the database and the audit log.
+
+### REQ_6.8
+**Group:** Incident
+**Type:** Data Integrity | **Constraint:** Business Rule | **Priority:** High | **Status:** Draft
+**Regulatory Reference:** HIPAA §164.312(b) — Data Integrity
+**Covered In:** —
+**Description:** All write operations on an Incident record must include the current version value. If the submitted version does not match the database version, the update must be rejected. Because closed Incidents are already immutable, the version conflict check applies to draft, submitted, and escalated records.
+**Acceptance Criteria:** A PATCH on an Incident with a stale version returns HTTP 409 Conflict with error code INCIDENT_VERSION_CONFLICT. A PATCH with the correct version succeeds and increments version by 1. A PATCH on a closed Incident returns 422 (immutability violation) before the version check is reached; 422 takes precedence over 409.

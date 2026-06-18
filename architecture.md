@@ -1,6 +1,6 @@
 # Care Art — System Architecture
 
-> **Status:** Phase 1 in progress. Sections cover platform overview, architecture layers, audit logging, and core data model for Phase 1 entities. Phase 2 will extend the data model and add module requirements.
+> **Status:** Phase 2 complete. Covers platform overview, architecture layers, audit logging, and the full core data model for Phase 1 and Phase 2 entities.
 > **Regulatory scope:** HIPAA · 42 CFR Part 2 · CMS (Medicaid/Medicare) · HL7 FHIR · SOC 2 Type II · State adult day care licensing
 
 ---
@@ -186,8 +186,10 @@ Every audit event, regardless of originating layer, must include:
 
 > **Approach:** Entities are defined one at a time with client approval before proceeding. Each entity specifies field name, data type, PHI classification, and storage/handling rules.
 
+> **Database note:** The mock backend uses SQLite for local development and test execution. The production target is PostgreSQL on AWS RDS (Multi-AZ) as specified in Section 2.5. All schema definitions, constraints, and triggers in this section are written for SQLite compatibility in the mock backend. PostgreSQL-specific syntax (e.g., partial indexes using `WHERE` clauses, `pgaudit`, row-level security) is noted where relevant as the production implementation target.
+
 > **Phased scope:**
-> **Phase 1** covers the minimum entities needed to support mock backend development and initial test coverage: Participant (already defined), User, Attendance, Claim, MARRecord, and Incident. **Phase 2** will add: CarePlan, Appointment, MedicationRefill, Reminder, and Consent. This phased approach keeps the mock backend simple while covering the highest-risk regulatory flows first.
+> **Phase 1** covers the minimum entities needed to support mock backend development and initial test coverage: Participant (already defined), User, Attendance, Claim, MARRecord, and Incident. **Phase 2** adds: CarePlan, Appointment, MedicationRefill, Reminder, and Consent. This phased approach keeps the mock backend simple while covering the highest-risk regulatory flows first.
 
 ### PHI Classification Key
 
@@ -860,7 +862,18 @@ All six Phase 1 entities are now defined. The table below summarizes the entity 
 - PHI fields encrypted at rest (AES-256, field-level) across all entities
 - 42 CFR Part 2 flag present on Participant (`is_sud_record`), MARRecord (`is_controlled_substance`), and Incident (`is_sud_related`) — evaluated independently and combined for strictest controls
 
-**Phase 2 entities to be defined:** CarePlan, Appointment, MedicationRefill, Reminder, Consent.
+**Phase 2 entities to be defined:** CarePlan, Appointment, MedicationRefill, Reminder, Consent. CarePlan includes a dependent sub-entity `care_plan_goal` (Section 3.8.4), which is part of the Phase 2 data model. Tests for `care_plan_goal` are deferred to Phase 3 to keep Phase 2 test scope manageable; the table definition and constraints are complete in Phase 2.
+
+### 3.7.1 Phase 2 Data Model — Entity Inventory
+
+| Entity | Section | Primary PHI Class | Regulatory Controls | Unique Constraint(s) | Tests |
+|---|---|---|---|---|---|
+| **CarePlan** | 3.8 | Clinical PHI | HIPAA · 42 CFR Part 2 (via `Participant.is_sud_record`) · State licensing | `participant_id + version_number` per tenant; single `active` per participant (partial index) | Phase 2 |
+| **care_plan_goal** | 3.8.4 | Clinical PHI | HIPAA · 42 CFR Part 2 (inherited from CarePlan) | `care_plan_id + domain + description` per care plan | Phase 3 |
+| **Appointment** | 3.9 | Clinical PHI + Direct Identifier | HIPAA · 42 CFR Part 2 (via `Participant.is_sud_record`) · HL7 FHIR R4 | `participant_id + physician_id + scheduled_start` per tenant; physician overlap (interval constraint + triggers) | Phase 2 |
+| **MedicationRefill** | 3.10 | Clinical PHI + 42 CFR Part 2 | HIPAA · 42 CFR Part 2 (via `is_controlled_substance`) · HL7 FHIR R4 · NCPDP SCRIPT | `participant_id + medication_name + requested_at` per tenant; one open refill per medication (partial index) | Phase 2 |
+| **Reminder** | 3.11 | Direct Identifier (delivery timestamps) | HIPAA · No-PHI-in-payload rule (Section 2.4) · 42 CFR Part 2 SUD delivery gate | `participant_id + reminder_type + scheduled_for` per tenant; one scheduled per type (partial index) | Phase 2 |
+| **Consent** | 3.12 | Clinical PHI + Direct Identifier | 42 CFR Part 2 §2.31 · HIPAA | One active consent per `disclosure_recipient_type` per participant (partial index) | Phase 2 |
 
 ---
 
@@ -1436,6 +1449,7 @@ The Reminder entity records a scheduled notification destined for a participant 
 | `uq_reminder_participant_type_open` | `tenant_id`, `participant_id`, `reminder_type` WHERE `status = 'scheduled'` | Per tenant (partial index) | Return HTTP 409 with error code `REMINDER_DUPLICATE_SCHEDULED`; only one scheduled reminder per type per participant per tenant is permitted at any time |
 
 **Rules:**
+- `REMINDER_TRANSPORT_NOT_IMPLEMENTED`: A POST that supplies `reminder_type = 'transport'` is rejected with `422 Unprocessable Entity` and error code `REMINDER_TRANSPORT_NOT_IMPLEMENTED`. The `transport` value is reserved for Phase 3 when the Transport entity is introduced. No Phase 2 record may carry `reminder_type = 'transport'`. This validation is enforced at the application service layer before any other constraint is evaluated.
 - `uq_reminder_participant_type_scheduled_for` prevents two reminders of the same type for the same participant at the identical scheduled delivery time within a tenant. This exact-match constraint is enforced at both the database and application layers as a backstop against concurrent duplicate submissions.
 - `uq_reminder_participant_type_open` (in-flight uniqueness): A participant may have at most one reminder in `scheduled` status per `reminder_type` per tenant at any time. A new reminder of the same type is rejected if an existing reminder for the same `participant_id`, `reminder_type`, and `tenant_id` currently has `status = 'scheduled'`. The restriction lifts when the prior reminder reaches any non-`scheduled` status (`sent`, `delivered`, `failed`, or `cancelled`). This prevents duplicate push notifications for the same upcoming appointment or transport event.
 - `REMINDER_PHI_IN_PAYLOAD`: A POST or PATCH that supplies a `title` or `body` value containing a detected PHI pattern — participant name, date of birth, age, diagnosis code, medication name, appointment date or time expressed as a human-readable string, or any other HIPAA-enumerated identifier — is rejected with `422 Unprocessable Entity` and error code `REMINDER_PHI_IN_PAYLOAD` before the record is written or the notification is queued. PHI pattern detection is enforced at the application service layer on every create and on every PATCH that includes `title` or `body`.
@@ -1454,6 +1468,7 @@ The Reminder entity records a scheduled notification destined for a participant 
   - **Sent-immutable check:** On every PATCH, the service reads the current `status`. If `status != 'scheduled'` and the request body contains any of `title`, `body`, `deep_link_path`, `channel`, or `scheduled_for`, the service returns `422 Unprocessable Entity` with `REMINDER_SENT_IMMUTABLE` before the write is attempted. If the request body contains `failure_reason` and `status != 'failed'` (i.e., `status` is `delivered`, `sent`, or `cancelled`), the service also returns `422 Unprocessable Entity` with `REMINDER_SENT_IMMUTABLE`. If the body contains only `failure_reason` and `status = 'failed'`, the write proceeds and `version` is incremented. A PATCH body that mixes immutable and mutable fields is rejected as a whole with `422` — the caller must separate the writes.
   - **Cancellation-reason check:** On every PATCH, if `status = 'cancelled'` is present in the request body, the service validates that `cancellation_reason` is also present and evaluates to a non-empty string after stripping whitespace. If the check fails, the service returns `422 Unprocessable Entity` with `REMINDER_MISSING_CANCELLATION_REASON` before the write is attempted.
 - Error messages exposed to the client:
+  - `REMINDER_TRANSPORT_NOT_IMPLEMENTED`: `"reminder_type 'transport' is not supported in Phase 2. This value is reserved for Phase 3."`
   - `REMINDER_DUPLICATE`: `"A reminder of this type for this participant at this scheduled time already exists."`
   - `REMINDER_DUPLICATE_SCHEDULED`: `"A scheduled reminder of this type already exists for this participant. The existing reminder must be sent, delivered, failed, or cancelled before a new one can be scheduled."`
   - `REMINDER_PHI_IN_PAYLOAD`: `"Notification title and body must not contain protected health information."`
@@ -1462,6 +1477,7 @@ The Reminder entity records a scheduled notification destined for a participant 
   - `REMINDER_MISSING_CANCELLATION_REASON`: `"A cancellation reason is required when cancelling a reminder."`
 
 **Test case targets:**
+- POST a reminder with `reminder_type = 'transport'` → assert `422` with `REMINDER_TRANSPORT_NOT_IMPLEMENTED`
 - POST a second reminder with the same `participant_id`, `reminder_type`, and `scheduled_for` within the same tenant → assert `409` with `REMINDER_DUPLICATE`
 - POST a reminder for a `participant_id` and `reminder_type` that already has a `scheduled` reminder within the same tenant → assert `409` with `REMINDER_DUPLICATE_SCHEDULED`
 - Transition an existing `scheduled` reminder to `sent`, then POST a new reminder of the same type for the same participant → assert `201 Created` (in-flight restriction lifts on any non-`scheduled` status)
@@ -1694,9 +1710,7 @@ A consent record for a participant where `is_sud_record = false` produces no gat
 
 ---
 
-> **Pending approval before proceeding to Phase 2 completion.**
 
 ---
 
-> **Phase 1 data model complete. Pending client approval to begin Phase 2 or proceed to test strategy.**
 

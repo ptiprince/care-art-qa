@@ -13,6 +13,7 @@ BILLING_ID = "user-billing-001"
 PHYSICIAN_ID = "user-physician-001"
 FAMILY_ID = "user-family-001"
 COMPLIANCE_ID = "user-compliance-001"
+INVALID_COORDINATOR_ID = "some-other-coordinator"
 
 
 def make_headers(
@@ -172,4 +173,103 @@ def make_incident(client, headers, participant_id, tenant_id=TENANT_A,
     payload.update(kwargs)
     r = client.post("/incidents", json=payload, headers=headers)
     assert r.status_code == 201, f"Incident creation failed: {r.text}"
+    return r.json()
+
+
+# ── Phase 2 helpers ──────────────────────────────────────────────────────────
+
+
+def make_care_plan(client, headers, participant_id, tenant_id=TENANT_A,
+                   version_number=None, **kwargs):
+    payload = {
+        "tenant_id": tenant_id,
+        "participant_id": participant_id,
+    }
+    if version_number is not None:
+        payload["version_number"] = version_number
+    payload.update(kwargs)
+    r = client.post("/care-plans", json=payload, headers=headers)
+    assert r.status_code == 201, f"CarePlan creation failed: {r.text}"
+    return r.json()
+
+
+def make_care_plan_goal(client, headers, care_plan_id, tenant_id=TENANT_A,
+                        domain="functional",
+                        description="Improve ambulation distance",
+                        **kwargs):
+    payload = {
+        "tenant_id": tenant_id,
+        "care_plan_id": care_plan_id,
+        "domain": domain,
+        "description": description,
+    }
+    payload.update(kwargs)
+    r = client.post("/care-plan-goals", json=payload, headers=headers)
+    assert r.status_code == 201, f"CarePlanGoal creation failed: {r.text}"
+    return r.json()
+
+
+def activate_care_plan(client, headers, care_plan_id, version,
+                       physician_id, effective_date=None,
+                       physician_signature_date=None):
+    if effective_date is None:
+        effective_date = datetime.now(timezone.utc).date().isoformat()
+    if physician_signature_date is None:
+        physician_signature_date = datetime.now(timezone.utc).date().isoformat()
+    r = client.patch(
+        f"/care-plans/{care_plan_id}",
+        json={
+            "version": version,
+            "status": "active",
+            "effective_date": effective_date,
+            "physician_id": physician_id,
+            "physician_signature_date": physician_signature_date,
+        },
+        headers=headers,
+    )
+    assert r.status_code == 200, f"CarePlan activation failed: {r.text}"
+    return r.json()
+
+
+def make_appointment(client, headers, participant_id, physician_id,
+                     tenant_id=TENANT_A, **kwargs):
+    now = datetime.now(timezone.utc)
+    offset_days = 7 + hash(uuid.uuid4()) % 300
+    start = kwargs.pop("scheduled_start",
+                       (now + timedelta(days=offset_days)).isoformat())
+    end = kwargs.pop("scheduled_end",
+                     (now + timedelta(days=offset_days, hours=1)).isoformat())
+    payload = {
+        "tenant_id": tenant_id,
+        "participant_id": participant_id,
+        "physician_id": physician_id,
+        "scheduled_start": start,
+        "scheduled_end": end,
+        "appointment_type": "routine",
+    }
+    payload.update(kwargs)
+    r = client.post("/appointments", json=payload, headers=headers)
+    assert r.status_code == 201, f"Appointment creation failed: {r.text}"
+    return r.json()
+
+
+def make_consent(client, headers, participant_id, tenant_id=TENANT_A,
+                 disclosure_recipient_type="ehr", **kwargs):
+    today = datetime.now(timezone.utc).date()
+    payload = {
+        "tenant_id": tenant_id,
+        "participant_id": participant_id,
+        "disclosure_recipient_type": disclosure_recipient_type,
+        "disclosure_recipient_name": "Dr. Smith EHR",
+        "disclosure_purpose": "Treatment coordination",
+        "scope_description": "Full care plan records",
+        "effective_date": today.isoformat(),
+        "expiration_date": (today + timedelta(days=365)).isoformat(),
+        "consent_form_reference": "FORM-001",
+        "consent_method": "written",
+        "participant_signature_date": today.isoformat(),
+    }
+    payload.update(kwargs)
+    r = client.post("/consents", json=payload, headers=headers)
+    assert r.status_code == 201, f"Consent creation failed: {r.text}"
     return r.json()

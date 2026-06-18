@@ -35,6 +35,8 @@ from helpers import (
     make_headers,
     make_participant, make_attendance, make_confirmed_attendance,
     make_claim, make_mar_record, make_incident, make_nurse_user,
+    make_care_plan, make_care_plan_goal, activate_care_plan,
+    make_appointment, make_consent,
 )
 
 # ── Bootstrap headers used only inside this module for fixture setup ──────────

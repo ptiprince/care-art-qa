@@ -1,0 +1,2827 @@
+# Care Art — Phase 1 Test Cases
+Source: test_cases/test_cases_phase1.xlsx
+Sheets: Participant Test Cases, User, Attendance, Claim, MARRecord, Incident, AuditLog, RBACSweep, TenantIsolation, DBSchema
+
+
+## Sheet: Participant Test Cases
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-1.1 - Positive Participant Creation by Program_administrator | Participant
+*Preconditions: No participant with these details exists in the system. Program_administrator role is authenticated.*
+
+**TC-1.1 Step 1** | REQ_1.7 | API | High | Draft
+  Description: Prepare a POST /participants payload with tenant_id, first_name, last_name, date_of_birth, and enrollment_date.
+  Expected: HTTP 201 Created. Response body contains the assigned participant_id and all submitted fields. program_status is set to "active" automatically.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-1.1 Step 2** | REQ_1.7 | API | High | Draft
+  Description: Send POST /participants using program_administrator headers.
+  Expected: HTTP 201 Created. Response body contains the assigned participant_id and all submitted fields. program_status is set to "active" automatically.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-1.1 Step 3** | REQ_1.7 | API | High | Draft
+  Description: Assert response status is 201 Created.
+  Expected: HTTP 201 Created. Response body contains the assigned participant_id and all submitted fields. program_status is set to "active" automatically.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-1.1 Step 4** | REQ_1.7 | API | High | Draft
+  Description: Assert response body contains participant_id, first_name, last_name, date_of_birth, and enrollment_date.
+  Expected: HTTP 201 Created. Response body contains the assigned participant_id and all submitted fields. program_status is set to "active" automatically.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-1.1 Step 5** | REQ_1.7 | API | High | Draft
+  Description: Assert program_status defaults to "active" in the response.
+  Expected: HTTP 201 Created. Response body contains the assigned participant_id and all submitted fields. program_status is set to "active" automatically.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-1.2 - Positive Participant Login with Valid Credentials
+
+**A user (user_id known from session fixture) exists in tenant-aaa-001 with status=active and MFA enabled. program_administrator role is authenticated.** | REQ_A user (user_id known from session fixture) exists in tenant-aaa-001 with status=active and MFA enabled. program_administrator role is authenticated. | A user (user_id known from session fixture) exists in tenant-aaa-001 with status=active and MFA enabled. program_administrator role is authenticated. | A user (user_id known from session fixture) exists in tenant-aaa-001 with status=active and MFA enabled. program_administrator role is authenticated. | A user (user_id known from session fixture) exists in tenant-aaa-001 with status=active and MFA enabled. program_administrator role is authenticated.
+  Description: A user (user_id known from session fixture) exists in tenant-aaa-001 with status=active and MFA enabled. program_administrator role is authenticated.
+  Expected: A user (user_id known from session fixture) exists in tenant-aaa-001 with status=active and MFA enabled. program_administrator role is authenticated.
+  Regulatory: A user (user_id known from session fixture) exists in tenant-aaa-001 with status=active and MFA enabled. program_administrator role is authenticated.
+
+**TC-1.2 Step 1** | REQ_2.5 | API | High | Draft
+  Description: Prepare a POST /login payload with the valid email and correct password.
+  Expected: HTTP 200 OK. Login succeeds and the response includes valid session credentials. No error is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-1.2 Step 2** | REQ_2.5 | API | High | Draft
+  Description: Send POST /login.
+  Expected: HTTP 200 OK. Login succeeds and the response includes valid session credentials. No error is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-1.2 Step 3** | REQ_2.5 | API | High | Draft
+  Description: Assert response status is 200 OK.
+  Expected: HTTP 200 OK. Login succeeds and the response includes valid session credentials. No error is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-1.2 Step 4** | REQ_2.5 | API | High | Draft
+  Description: Assert response body contains status equal to ok and message is non-null.
+  Expected: HTTP 200 OK. Response body: status=ok, message non-null. Mock backend returns a plain success response, not a JWT token.
+  Regulatory: HIPAA §164.312(d)
+
+### TC-1.3 - Negative Participant Login Wrong Password Returns 401
+*Preconditions: A user account exists with a known email. An incorrect password is used for the attempt.*
+
+**TC-1.3 Step 1** | REQ_2.5 | API | High | Draft
+  Description: Prepare a POST /login payload with the valid email and an incorrect password.
+  Expected: HTTP 401 Unauthorized. No session token is returned. The error message is generic and does not disclose which field (email or password) was incorrect.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-1.3 Step 2** | REQ_2.5 | API | High | Draft
+  Description: Send POST /login.
+  Expected: HTTP 401 Unauthorized. No session token is returned. The error message is generic and does not disclose which field (email or password) was incorrect.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-1.3 Step 3** | REQ_2.5 | API | High | Draft
+  Description: Assert response status is 401 Unauthorized.
+  Expected: HTTP 401 Unauthorized. No session token is returned. The error message is generic and does not disclose which field (email or password) was incorrect.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-1.3 Step 4** | REQ_2.5 | API | High | Draft
+  Description: Assert no session token is present in the response body.
+  Expected: HTTP 401 Unauthorized. No session token is returned. The error message is generic and does not disclose which field (email or password) was incorrect.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-1.3 Step 5** | REQ_2.5 | API | High | Draft
+  Description: Assert the error message does not reveal whether the email or the password was wrong.
+  Expected: HTTP 401 Unauthorized. No session token is returned. The error message is generic and does not disclose which field (email or password) was incorrect.
+  Regulatory: HIPAA §164.312(d)
+
+### TC-1.4 - Duplicate Medicaid ID Returns 409 | Participant
+
+**A participant with a known medicaid_id (taken from the active participants fixture) already exists in tenant-aaa-001.** | REQ_A participant with a known medicaid_id (taken from the active participants fixture) already exists in tenant-aaa-001. | A participant with a known medicaid_id (taken from the active participants fixture) already exists in tenant-aaa-001. | A participant with a known medicaid_id (taken from the active participants fixture) already exists in tenant-aaa-001. | A participant with a known medicaid_id (taken from the active participants fixture) already exists in tenant-aaa-001.
+  Description: A participant with a known medicaid_id (taken from the active participants fixture) already exists in tenant-aaa-001.
+  Expected: A participant with a known medicaid_id (taken from the active participants fixture) already exists in tenant-aaa-001.
+  Regulatory: A participant with a known medicaid_id (taken from the active participants fixture) already exists in tenant-aaa-001.
+
+**TC-1.4 Step 1** | REQ_1.1 | API | High | Draft
+  Description: Send POST /participants with the same medicaid_id as the seeded fixture participant
+  Expected: HTTP 409 Conflict. The response body contains error_code="PARTICIPANT_DUPLICATE_MEDICAID_ID". No duplicate record is created in the database.
+  Regulatory: CMS Medicaid Billing Integrity
+
+**TC-1.4 Step 2** | REQ_1.1 | API | High | Draft
+  Description: Assert response status is 409 Conflict.
+  Expected: HTTP 409 Conflict. The response body contains error_code="PARTICIPANT_DUPLICATE_MEDICAID_ID". No duplicate record is created in the database.
+  Regulatory: CMS Medicaid Billing Integrity
+
+**TC-1.4 Step 3** | REQ_1.1 | API | High | Draft
+  Description: Assert detail.error_code = "PARTICIPANT_DUPLICATE_MEDICAID_ID".
+  Expected: HTTP 409 Conflict. The response body contains error_code="PARTICIPANT_DUPLICATE_MEDICAID_ID". No duplicate record is created in the database.
+  Regulatory: CMS Medicaid Billing Integrity
+
+### TC-1.5 - SUD Record Protected from billing_specialist Returns 403 Without Disclosure | Participant
+*Preconditions: A participant with is_sud_record=true has been created in tenant-aaa-001 by program_administrator. billing_specialist role is authenticated in the same tenant.*
+
+**TC-1.5 Step 1** | REQ_1.3 | API | High | Draft
+  Description: Send GET /participants/{participant_id} using billing_specialist headers.
+  Expected: HTTP 403 Forbidden with error_code containing "SUD". The existence of the record is not revealed. No participant data of any kind appears in the error response body.
+  Regulatory: 42 CFR Part 2 §2.13(b)
+
+**TC-1.5 Step 2** | REQ_1.3 | API | High | Draft
+  Description: Assert response status is 403 Forbidden.
+  Expected: HTTP 403 Forbidden with error_code containing "SUD". The existence of the record is not revealed. No participant data of any kind appears in the error response body.
+  Regulatory: 42 CFR Part 2 §2.13(b)
+
+**TC-1.5 Step 3** | REQ_1.3 | API | High | Draft
+  Description: Assert detail.error_code contains "SUD".
+  Expected: HTTP 403 Forbidden with error_code containing "SUD". The existence of the record is not revealed. No participant data of any kind appears in the error response body.
+  Regulatory: 42 CFR Part 2 §2.13(b)
+
+**TC-1.5 Step 4** | REQ_1.3 | API | High | Draft
+  Description: Assert the response body contains no participant data - no participant_id, no PHI fields, no is_sud_record flag value.
+  Expected: HTTP 403 Forbidden with error_code containing "SUD". The existence of the record is not revealed. No participant data of any kind appears in the error response body.
+  Regulatory: 42 CFR Part 2 §2.13(b)
+
+### TC-1.6 - Audit Log on PHI Operation Contains All Mandatory Fields and No PHI Values | Participant
+*Preconditions: A program_administrator and a compliance_officer are both authenticated in tenant-aaa-001.*
+
+**TC-1.6 Step 1** | REQ_1.4 | Business Rules | High | Draft
+  Description: Send POST /participants using program_administrator headers. Record the returned participant_id.
+  Expected: Audit log contains a PHI_WRITE event with outcome="SUCCESS". All 11 mandatory fields from Section 2.6.1 are populated. PHI values do not appear in data_affected.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-1.6 Step 2** | REQ_1.4 | Business Rules | High | Draft
+  Description: Send GET /audit-logs with tenant_id="tenant-aaa-001", resource_type="Participant", resource_id={participant_id} using compliance_officer headers.
+  Expected: Audit log contains a PHI_WRITE event with outcome="SUCCESS". All 11 mandatory fields from Section 2.6.1 are populated. PHI values do not appear in data_affected.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-1.6 Step 3** | REQ_1.4 | Business Rules | High | Draft
+  Description: Assert response status is 200 OK.
+  Expected: Audit log contains a PHI_WRITE event with outcome="SUCCESS". All 11 mandatory fields from Section 2.6.1 are populated. PHI values do not appear in data_affected.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-1.6 Step 4** | REQ_1.4 | Business Rules | High | Draft
+  Description: Locate the event with action_type="PHI_WRITE" in the returned list.
+  Expected: Audit log contains a PHI_WRITE event with outcome="SUCCESS". All 11 mandatory fields from Section 2.6.1 are populated. PHI values do not appear in data_affected.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-1.6 Step 5** | REQ_1.4 | Business Rules | High | Draft
+  Description: Assert all 11 mandatory fields are non-null: timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: Audit log contains a PHI_WRITE event with outcome="SUCCESS". All 11 mandatory fields from Section 2.6.1 are populated. PHI values do not appear in data_affected.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-1.6 Step 6** | REQ_1.4 | Business Rules | High | Draft
+  Description: Assert PHI values - first_name, last_name, date_of_birth - are absent from data_affected.
+  Expected: Audit log contains a PHI_WRITE event with outcome="SUCCESS". All 11 mandatory fields from Section 2.6.1 are populated. PHI values do not appear in data_affected.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+### TC-1.7 - State Machine Positive: active to on_leave Returns 200 | Participant
+*Preconditions: A participant with program_status="active" exists in tenant-aaa-001. Program_administrator role is authenticated.*
+
+**TC-1.7 Step 1** | REQ_1.5 | Business Rules | Medium | Draft
+  Description: Record the participant_id and current version.
+  Expected: HTTP 200 OK. The program_status transitions to "on_leave" successfully. The updated status is reflected in the response body.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.7 Step 2** | REQ_1.5 | Business Rules | Medium | Draft
+  Description: Send PATCH /participants/{participant_id} with program_status="on_leave" and the correct version value.
+  Expected: HTTP 200 OK. The program_status transitions to "on_leave" successfully. The updated status is reflected in the response body.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.7 Step 3** | REQ_1.5 | Business Rules | Medium | Draft
+  Description: Assert response status is 200 OK.
+  Expected: HTTP 200 OK. The program_status transitions to "on_leave" successfully. The updated status is reflected in the response body.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.7 Step 4** | REQ_1.5 | Business Rules | Medium | Draft
+  Description: Assert program_status="on_leave" in the response body.
+  Expected: HTTP 200 OK. The program_status transitions to "on_leave" successfully. The updated status is reflected in the response body.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.7 Step 5** | REQ_1.7 | DB | Medium | Draft
+  Description: Query DB: SELECT program_status FROM participant WHERE participant_id=<participant_id>. Assert program_status='on_leave'.
+  Expected: DB confirms program_status='on_leave' persisted correctly after the transition.
+  Regulatory: State Adult Day Care Licensing
+
+### TC-1.8 - State Machine Negative: deceased to active Returns 422 | Participant
+*Preconditions: A participant exists and has been transitioned to program_status="deceased". Program_administrator role is authenticated.*
+
+**TC-1.8 Step 1** | REQ_1.5 | Business Rules | Medium | Draft
+  Description: Record the participant_id and current version after the deceased transition.
+  Expected: HTTP 422 Unprocessable Entity. The transition from deceased to active is blocked. The error code indicates an invalid state transition. The participant record remains unchanged.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.8 Step 2** | REQ_1.5 | Business Rules | Medium | Draft
+  Description: Send PATCH /participants/{participant_id} with program_status="active" and the current version.
+  Expected: HTTP 422 Unprocessable Entity. The transition from deceased to active is blocked. The error code indicates an invalid state transition. The participant record remains unchanged.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.8 Step 3** | REQ_1.5 | Business Rules | Medium | Draft
+  Description: Assert response status is 422 Unprocessable Entity.
+  Expected: HTTP 422 Unprocessable Entity. The transition from deceased to active is blocked. The error code indicates an invalid state transition. The participant record remains unchanged.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.8 Step 4** | REQ_1.8 | Business Rules | Medium | Draft
+  Description: Assert error_code contains 'TRANSITION'.
+  Expected: HTTP 422 Unprocessable Entity. The transition from deceased to active is blocked. The error code indicates an invalid state transition. The participant record remains unchanged.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.8 Step 5** | REQ_1.8 | DB | Medium | Draft
+  Description: Query DB: SELECT program_status FROM participant WHERE participant_id=<participant_id>. Assert program_status='deceased' (unchanged after rejected transition).
+  Expected: DB confirms program_status remains 'deceased'. The rejected PATCH did not alter the row.
+  Regulatory: State Adult Day Care Licensing
+
+### TC-1.9 - Soft Delete Positive: Returns 200 and is_deleted True in DB | Participant
+*Preconditions: A participant exists in tenant-aaa-001 and has not been deleted. Program_administrator role is authenticated.*
+
+**TC-1.9 Step 1** | REQ_1.8 | API | High | Draft
+  Description: Record the participant_id.
+  Expected: HTTP 200 OK with is_deleted=true in the response. A subsequent standard GET on the same participant_id returns 404. The database row is not physically removed.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.9 Step 2** | REQ_1.8 | API | High | Draft
+  Description: Send DELETE /participants/{participant_id} using program_administrator headers.
+  Expected: HTTP 200 OK with is_deleted=true in the response. A subsequent standard GET on the same participant_id returns 404. The database row is not physically removed.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.9 Step 3** | REQ_1.8 | API | High | Draft
+  Description: Assert response status is 200 OK.
+  Expected: HTTP 200 OK with is_deleted=true in the response. A subsequent standard GET on the same participant_id returns 404. The database row is not physically removed.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.9 Step 4** | REQ_1.8 | API | High | Draft
+  Description: Assert is_deleted=true in the response body.
+  Expected: HTTP 200 OK with is_deleted=true in the response. A subsequent standard GET on the same participant_id returns 404. The database row is not physically removed.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.9 Step 5** | REQ_1.9 | API | High | Draft
+  Description: Send GET /participants/{participant_id} using a standard role (e.g., care_coordinator).
+  Expected: HTTP 200 OK with is_deleted=true in the response. A subsequent standard GET on the same participant_id returns 404. The database row is not physically removed.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.9 Step 6** | REQ_1.9 | API | High | Draft
+  Description: Assert response status is 404 Not Found.
+  Expected: HTTP 200 OK with is_deleted=true in the response. A subsequent standard GET on the same participant_id returns 404. The database row is not physically removed.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.9 Step 7** | REQ_1.8 | DB | High | Draft
+  Description: Query DB: SELECT is_deleted FROM participant WHERE participant_id=<participant_id>. Assert row exists and is_deleted=true.
+  Expected: DB row exists with is_deleted=true. Physical row was not removed. Soft delete confirmed at data layer.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+### TC-1.10 - Soft Delete Negative: Physical Delete Attempt Returns 405 Record Remains in DB | Participant
+*Preconditions: A participant exists in tenant-aaa-001. Program_administrator role is authenticated.*
+
+**TC-1.10 Step 1** | REQ_1.9 | API | High | Draft
+  Description: Record the participant_id.
+  Expected: HTTP 405 Method Not Allowed. The physical database row is not removed. The record remains retrievable by compliance_officer with include_deleted=true.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.10 Step 2** | REQ_1.9 | API | High | Draft
+  Description: Send DELETE /participants/{participant_id}/hard using program_administrator headers.
+  Expected: HTTP 405 Method Not Allowed. The physical database row is not removed. The record remains retrievable by compliance_officer with include_deleted=true.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.10 Step 3** | REQ_1.10 | API | High | Draft
+  Description: Assert response status is 405 Method Not Allowed.
+  Expected: HTTP 405 Method Not Allowed. The physical database row is not removed. The record remains retrievable by compliance_officer with include_deleted=true.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.10 Step 4** | REQ_1.10 | API | High | Draft
+  Description: Send GET /participants/{participant_id} using compliance_officer headers with include_deleted=true.
+  Expected: HTTP 405 Method Not Allowed. The physical database row is not removed. The record remains retrievable by compliance_officer with include_deleted=true.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+**TC-1.10 Step 5** | REQ_1.9 | API | High | Draft
+  Description: Assert the participant record is still present in the response.
+  Expected: HTTP 405 Method Not Allowed. The physical database row is not removed. The record remains retrievable by compliance_officer with include_deleted=true.
+  Regulatory: HIPAA §164.530(j) - Record Retention
+
+### TC-1.11 - Required Field Missing first_name Returns 400 with Field Name in Error | Participant
+*Preconditions: Program_administrator role is authenticated. No participant with these details needs to exist beforehand.*
+
+**TC-1.11 Step 1** | REQ_1.7 | API | High | Draft
+  Description: Prepare a POST /participants payload with tenant_id, last_name, date_of_birth, and enrollment_date - omitting first_name.
+  Expected: HTTP 400 or 422. The error response explicitly names "first_name" as the missing or invalid field. No participant record is created.
+  Regulatory: CMS Medicaid/Medicare
+
+**TC-1.11 Step 2** | REQ_1.11 | API | High | Draft
+  Description: Send POST /participants using program_administrator headers.
+  Expected: HTTP 400 or 422. The error response explicitly names 'first_name' as the missing or invalid field. No participant record is created.
+  Regulatory: CMS Medicaid/Medicare
+
+**TC-1.11 Step 3** | REQ_1.11 | API | High | Draft
+  Description: Assert response status is 400 or 422.
+  Expected: HTTP 400 or 422. The error response explicitly names 'first_name' as the missing or invalid field. No participant record is created.
+  Regulatory: CMS Medicaid/Medicare
+
+**TC-1.11 Step 4** | REQ_1.7 | API | High | Draft
+  Description: Assert the response body contains "first_name" identifying the missing field.
+  Expected: HTTP 400 or 422. The error response explicitly names "first_name" as the missing or invalid field. No participant record is created.
+  Regulatory: CMS Medicaid/Medicare
+
+### TC-1.12 - Required Field Missing enrollment_date Returns 400 with Field Name in Error | Participant
+*Preconditions: Program_administrator role is authenticated. No participant with these details needs to exist beforehand.*
+
+**TC-1.12 Step 1** | REQ_1.6 | API | High | Draft
+  Description: Prepare a POST /participants payload with tenant_id, first_name, last_name, and date_of_birth - omitting enrollment_date.
+  Expected: HTTP 400. The error response explicitly names "enrollment_date" as the missing field. No participant record is created.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.12 Step 2** | REQ_1.6 | API | High | Draft
+  Description: Send POST /participants using program_administrator headers.
+  Expected: HTTP 400. The error response explicitly names "enrollment_date" as the missing field. No participant record is created.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.12 Step 3** | REQ_1.6 | API | High | Draft
+  Description: Assert response status is 400.
+  Expected: HTTP 400. The error response explicitly names "enrollment_date" as the missing field. No participant record is created.
+  Regulatory: State Adult Day Care Licensing
+
+**TC-1.12 Step 4** | REQ_1.6 | API | High | Draft
+  Description: Assert the response body contains "enrollment_date" identifying the missing field.
+  Expected: HTTP 400. The error response explicitly names "enrollment_date" as the missing field. No participant record is created.
+  Regulatory: State Adult Day Care Licensing
+
+*Total steps in Participant Test Cases: 59*
+
+
+## Sheet: User
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-2.1 - Positive User Creation by Program_administrator | User
+*Preconditions: No user with the chosen email exists in tenant-aaa-001. program_administrator role is authenticated with MFA enabled.*
+
+**TC-2.1 Step 1** | REQ_3.2 | API | High | Draft
+  Description: Prepare a POST /users payload with tenant_id, first_name, last_name, email, and role.
+  Expected: HTTP 201 Created. Response body contains user_id, email, role, and status="active". user_id is a non-null UUID assigned by the system.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.1 Step 2** | REQ_3.2 | API | High | Draft
+  Description: Send POST /users using program_administrator headers.
+  Expected: HTTP 201 Created. Response body contains user_id, email, role, and status="active". user_id is a non-null UUID assigned by the system.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.1 Step 3** | REQ_3.2 | API | High | Draft
+  Description: Assert response status is 201 Created.
+  Expected: HTTP 201 Created. Response body contains user_id, email, role, and status="active". user_id is a non-null UUID assigned by the system.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.1 Step 4** | REQ_3.2 | API | High | Draft
+  Description: Assert response body contains user_id, email, role, and status="active".
+  Expected: HTTP 201 Created. Response body contains user_id, email, role, and status="active". user_id is a non-null UUID assigned by the system.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.1 Step 5** | REQ_3.2 | API | High | Draft
+  Description: Assert user_id is a non-null UUID assigned by the system.
+  Expected: HTTP 201 Created. Response body contains user_id, email, role, and status="active". user_id is a non-null UUID assigned by the system.
+  Regulatory: HIPAA §164.308(a)(3)
+
+### TC-2.2 - Negative User Creation by Unauthorized Role Returns 403 | User
+*Preconditions: A user with role care_coordinator is authenticated. program_administrator role is not used.*
+
+**TC-2.2 Step 1** | REQ_3.2.6 | API | High | Draft
+  Description: Prepare a POST /users payload with valid user fields (tenant_id, first_name, last_name, email, role).
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No record is created.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.2 Step 2** | REQ_3.2.6 | API | High | Draft
+  Description: Send POST /users using care_coordinator headers.
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No record is created.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.2 Step 3** | REQ_3.2.6 | API | High | Draft
+  Description: Assert response status is 403 Forbidden.
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No record is created.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.2 Step 4** | REQ_3.2.6 | API | High | Draft
+  Description: Assert response body contains error_code="RBAC_DENIED".
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No record is created.
+  Regulatory: HIPAA §164.308(a)(3)
+
+### TC-2.3 - Positive Login with Valid Credentials Returns 200 | User
+*Preconditions: A user account exists with a known user_id and stored password_hash. The account is active.*
+
+**TC-2.3 Step 1** | REQ_3.2.3 | API | High | Draft
+  Description: Prepare a POST /login payload with the valid user_id and the correct password.
+  Expected: HTTP 200 OK. Response body contains status="ok". No error is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.3 Step 2** | REQ_3.2.3 | API | High | Draft
+  Description: Send POST /login.
+  Expected: HTTP 200 OK. Response body contains status="ok". No error is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.3 Step 3** | REQ_3.2.3 | API | High | Draft
+  Description: Assert response status is 200 OK.
+  Expected: HTTP 200 OK. Response body contains status="ok". No error is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.3 Step 4** | REQ_3.2.3 | API | High | Draft
+  Description: Assert response body contains status="ok" and a success message.
+  Expected: HTTP 200 OK. Response body contains status="ok". No error is returned.
+  Regulatory: HIPAA §164.312(d)
+
+### TC-2.4 - Negative Login Wrong Password Returns 401 Error Message Does Not Reveal Which Credential Was Wrong | User
+*Preconditions: A user account exists with a known user_id and stored password_hash. An incorrect non-empty password is used for the attempt.*
+
+**TC-2.4 Step 1** | REQ_3.2.3 | API | High | Draft
+  Description: Prepare a POST /login payload with a valid user_id and an incorrect non-empty password.
+  Expected: HTTP 401 Unauthorized. Error message is generic and does not disclose whether the user_id or the password was wrong. No session token is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.4 Step 2** | REQ_3.2.3 | API | High | Draft
+  Description: Send POST /login.
+  Expected: HTTP 401 Unauthorized. Error message is generic and does not disclose whether the user_id or the password was wrong. No session token is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.4 Step 3** | REQ_3.2.3 | API | High | Draft
+  Description: Assert response status is 401 Unauthorized.
+  Expected: HTTP 401 Unauthorized. Error message is generic and does not disclose whether the user_id or the password was wrong. No session token is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.4 Step 4** | REQ_3.2.3 | API | High | Draft
+  Description: Assert the error message does not contain the words "email", "user_id", or "password".
+  Expected: HTTP 401 Unauthorized. Error message is generic and does not disclose whether the user_id or the password was wrong. No session token is returned.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.4 Step 5** | REQ_3.2.3 | API | High | Draft
+  Description: Assert no session token is present in the response body.
+  Expected: HTTP 401 Unauthorized. Error message is generic and does not disclose whether the user_id or the password was wrong. No session token is returned.
+  Regulatory: HIPAA §164.312(d)
+
+### TC-2.5 - Duplicate Email Same Tenant Returns 409 USER_DUPLICATE_EMAIL | User
+*Preconditions: A user with email "existing@test.care" already exists in tenant-aaa-001. program_administrator role is authenticated.*
+
+**TC-2.5 Step 1** | REQ_3.2.7 | API | High | Draft
+  Description: Ensure a user with email "existing@test.care" already exists in tenant-aaa-001.
+  Expected: HTTP 409 Conflict. Response body contains error_code="USER_DUPLICATE_EMAIL". No duplicate record is created.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.5 Step 2** | REQ_3.2.7 | API | High | Draft
+  Description: Send POST /users with email="existing@test.care" in tenant-aaa-001 using program_administrator headers.
+  Expected: HTTP 409 Conflict. Response body contains error_code="USER_DUPLICATE_EMAIL". No duplicate record is created.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.5 Step 3** | REQ_3.2.7 | API | High | Draft
+  Description: Assert response status is 409 Conflict.
+  Expected: HTTP 409 Conflict. Response body contains error_code="USER_DUPLICATE_EMAIL". No duplicate record is created.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.5 Step 4** | REQ_3.2.7 | API | High | Draft
+  Description: Assert response body contains error_code="USER_DUPLICATE_EMAIL".
+  Expected: HTTP 409 Conflict. Response body contains error_code="USER_DUPLICATE_EMAIL". No duplicate record is created.
+  Regulatory: HIPAA §164.308(a)(3)
+
+### TC-2.6 - Same Email Different Tenant Returns 201 | User
+*Preconditions: A user with email "shared@test.care" exists in tenant-aaa-001. program_administrator role is authenticated in tenant-bbb-002.*
+
+**TC-2.6 Step 1** | REQ_3.2.7 | API | Medium | Draft
+  Description: Create a user with email="shared@test.care" in tenant-aaa-001 via POST /users.
+  Expected: HTTP 201 Created. Each user receives a distinct user_id. The same email may exist in different tenants without conflict.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.6 Step 2** | REQ_3.2.7 | API | Medium | Draft
+  Description: Send POST /users with the same email="shared@test.care" in tenant-bbb-002.
+  Expected: HTTP 201 Created. Each user receives a distinct user_id. The same email may exist in different tenants without conflict.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.6 Step 3** | REQ_3.2.7 | API | Medium | Draft
+  Description: Assert response status is 201 Created.
+  Expected: HTTP 201 Created. Each user receives a distinct user_id. The same email may exist in different tenants without conflict.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.6 Step 4** | REQ_3.2.7 | API | Medium | Draft
+  Description: Assert the returned user_id is distinct from the user_id created in tenant-aaa-001.
+  Expected: HTTP 201 Created. Each user receives a distinct user_id. The same email may exist in different tenants without conflict.
+  Regulatory: HIPAA §164.308(a)(3)
+
+### TC-2.7 - Account Lockout After 5 Consecutive Failed Logins | User
+*Preconditions: An active user account exists with a known user_id and password_hash. The account has failed_login_count=0.*
+
+**TC-2.7 Step 1** | REQ_3.2.3 | API | High | Draft
+  Description: Send POST /login 5 times with the same user_id and an incorrect password.
+  Expected: The account locks after 5 consecutive failures. failed_login_count reaches 5 and locked_until is set to 30 minutes from now.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.7 Step 2** | REQ_3.2.3 | API | High | Draft
+  Description: Assert each of the first 4 attempts returns HTTP 401 with error_code="AUTH_FAILURE".
+  Expected: The account locks after 5 consecutive failures. failed_login_count reaches 5 and locked_until is set to 30 minutes from now.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.7 Step 3** | REQ_3.2.3 | API | High | Draft
+  Description: Assert the 5th attempt also returns HTTP 401.
+  Expected: The account locks after 5 consecutive failures. failed_login_count reaches 5 and locked_until is set to 30 minutes from now.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.7 Step 4** | REQ_3.2.3 | API | High | Draft
+  Description: Assert locked_until is set to a timestamp approximately 30 minutes in the future.
+  Expected: The account locks after 5 consecutive failures. failed_login_count reaches 5 and locked_until is set to 30 minutes from now.
+  Regulatory: HIPAA §164.312(d)
+
+### TC-2.8 - Locked User Login Attempt Returns 401 ACCOUNT_LOCKED | User
+*Preconditions: A user account has locked_until set to a future timestamp (account is currently locked).*
+
+**TC-2.8 Step 1** | REQ_3.2.3 | API | High | Draft
+  Description: Confirm the target user account has locked_until in the future.
+  Expected: HTTP 401 Unauthorized. Response contains error_code="ACCOUNT_LOCKED". No session is issued regardless of the password supplied.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.8 Step 2** | REQ_3.2.3 | API | High | Draft
+  Description: Send POST /login with the correct password for the locked user.
+  Expected: HTTP 401 Unauthorized. Response contains error_code="ACCOUNT_LOCKED". No session is issued regardless of the password supplied.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.8 Step 3** | REQ_3.2.3 | API | High | Draft
+  Description: Assert response status is 401 Unauthorized with error_code="ACCOUNT_LOCKED".
+  Expected: HTTP 401 Unauthorized. Response contains error_code="ACCOUNT_LOCKED". No session is issued regardless of the password supplied.
+  Regulatory: HIPAA §164.312(d)
+
+**TC-2.8 Step 4** | REQ_3.2.3 | API | High | Draft
+  Description: Assert no session token or access token is returned.
+  Expected: HTTP 401 Unauthorized. Response contains error_code="ACCOUNT_LOCKED". No session is issued regardless of the password supplied.
+  Regulatory: HIPAA §164.312(d)
+
+### TC-2.9 - User Deactivation (Soft Delete) Returns 200 and User Is Marked Inactive in DB | User
+*Preconditions: An active user exists. program_administrator role is authenticated. User records cannot be physically deleted per HIPAA retention rules.*
+
+**TC-2.9 Step 1** | REQ_3.2.6 | API | High | Draft
+  Description: Create an active user via POST /users.
+  Expected: HTTP 200 OK. User status is "inactive" in the response. The user record persists in the database with status="inactive" (user records are never physically deleted).
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.9 Step 2** | REQ_3.2.6 | API | High | Draft
+  Description: Send PATCH /users/{user_id} with status="inactive" using program_administrator headers.
+  Expected: HTTP 200 OK. User status is "inactive" in the response. The user record persists in the database with status="inactive" (user records are never physically deleted).
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.9 Step 3** | REQ_3.2.6 | API | High | Draft
+  Description: Assert response status is 200 OK and response body status field equals "inactive".
+  Expected: HTTP 200 OK. User status is "inactive" in the response. The user record persists in the database with status="inactive" (user records are never physically deleted).
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.9 Step 4** | REQ_3.2.6 | API | High | Draft
+  Description: Assert the user record still exists in the database with status="inactive".
+  Expected: HTTP 200 OK. User status is "inactive" in the response. The user record persists in the database with status="inactive" (user records are never physically deleted).
+  Regulatory: HIPAA §164.308(a)(3)
+
+### TC-2.10 - Audit Log on User Creation Has All Mandatory Fields | User
+*Preconditions: program_administrator role is authenticated. compliance_officer role is available to query audit logs.*
+
+**TC-2.10 Step 1** | REQ_2.6 | API | High | Draft
+  Description: Create a user via POST /users with program_administrator credentials.
+  Expected: PHI_WRITE audit event is created. All 11 mandatory fields are non-null. data_affected contains only field names, not PHI values.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-2.10 Step 2** | REQ_2.6 | API | High | Draft
+  Description: Query GET /audit-logs with resource_type=User and the newly created user_id, using compliance_officer headers.
+  Expected: PHI_WRITE audit event is created. All 11 mandatory fields are non-null. data_affected contains only field names, not PHI values.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-2.10 Step 3** | REQ_2.6 | API | High | Draft
+  Description: Assert a PHI_WRITE audit event exists for the user creation.
+  Expected: PHI_WRITE audit event is created. All 11 mandatory fields are non-null. data_affected contains only field names, not PHI values.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-2.10 Step 4** | REQ_2.6 | API | High | Draft
+  Description: Assert all 11 mandatory fields (timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer) are present and non-null.
+  Expected: PHI_WRITE audit event is created. All 11 mandatory fields are non-null. data_affected contains only field names, not PHI values.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-2.10 Step 5** | REQ_2.6 | API | High | Draft
+  Description: Assert data_affected contains only field names and not any personal information values.
+  Expected: PHI_WRITE audit event is created. All 11 mandatory fields are non-null. data_affected contains only field names, not PHI values.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+### TC-2.11 - Missing Required Field on User Creation Returns 400 with Field Name | User
+*Preconditions: program_administrator role is authenticated. The POST /users payload intentionally omits the required email field.*
+
+**TC-2.11 Step 1** | REQ_3.2 | API | Medium | Draft
+  Description: Prepare a POST /users payload omitting the required email field.
+  Expected: HTTP 400 or 422. The response body explicitly names "email" as the missing or invalid field.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.11 Step 2** | REQ_3.2 | API | Medium | Draft
+  Description: Send POST /users using program_administrator headers.
+  Expected: HTTP 400 or 422. The response body explicitly names "email" as the missing or invalid field.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.11 Step 3** | REQ_3.2 | API | Medium | Draft
+  Description: Assert response status is 400 or 422.
+  Expected: HTTP 400 or 422. The response body explicitly names "email" as the missing or invalid field.
+  Regulatory: HIPAA §164.308(a)(3)
+
+**TC-2.11 Step 4** | REQ_3.2 | API | Medium | Draft
+  Description: Assert the response body contains the string "email" identifying the missing required field.
+  Expected: HTTP 400 or 422. The response body explicitly names "email" as the missing or invalid field.
+  Regulatory: HIPAA §164.308(a)(3)
+
+### TC-2.12 - billing_specialist Attempts to Create Participant Returns 403 | User
+*Preconditions: billing_specialist role is authenticated. The POST /participants endpoint requires program_administrator, care_coordinator, nurse_medication_aide, billing_specialist, or compliance_officer role with write permission.*
+
+**TC-2.12 Step 1** | REQ_3.2.6 | API | High | Draft
+  Description: Prepare a POST /participants payload with valid tenant_id, first_name, last_name, date_of_birth, and enrollment_date.
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No participant record is created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.12 Step 2** | REQ_3.2.6 | API | High | Draft
+  Description: Send POST /participants using billing_specialist headers.
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No participant record is created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.12 Step 3** | REQ_3.2.6 | API | High | Draft
+  Description: Assert response status is 403 Forbidden.
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No participant record is created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.12 Step 4** | REQ_3.2.6 | API | High | Draft
+  Description: Assert response body contains error_code="RBAC_DENIED".
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No participant record is created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-2.13 - nurse_medication_aide Attempts to Create Claim Returns 403 | User
+*Preconditions: nurse_medication_aide role is authenticated. POST /claims requires billing_specialist or program_administrator role.*
+
+**TC-2.13 Step 1** | REQ_3.2.6 | API | High | Draft
+  Description: Prepare a POST /claims payload with valid participant_id, attendance_ids, payer_type, procedure_code, and date_of_service_start.
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No claim record is created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.13 Step 2** | REQ_3.2.6 | API | High | Draft
+  Description: Send POST /claims using nurse_medication_aide headers.
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No claim record is created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.13 Step 3** | REQ_3.2.6 | API | High | Draft
+  Description: Assert response status is 403 Forbidden.
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No claim record is created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.13 Step 4** | REQ_3.2.6 | API | High | Draft
+  Description: Assert response body contains error_code="RBAC_DENIED".
+  Expected: HTTP 403 Forbidden. Response body contains error_code="RBAC_DENIED". No claim record is created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-2.14 - Inactive User Receives 403 Before Role Check; DB Confirms Audit Event | User
+*Preconditions: A user account exists in DB with status=inactive. Valid credentials are available.*
+
+**TC-2.14 Step 1** | REQ_2.14 | API | P1 | Draft
+  Description: Send GET /participants/{any_valid_participant_id} using inactive user headers (X-User-Status: inactive).
+  Expected: HTTP 403 Forbidden returned. Role is not evaluated — status check fires first.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.14 Step 2** | REQ_2.14 | API | P1 | Draft
+  Description: Query audit_log table directly: SELECT event_type, tenant_id, user_id, outcome FROM audit_log WHERE user_id=inactive_user_id.
+  Expected: Audit row exists with outcome=DENIED and tenant_id and user_id non-null.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.14 Step 3** | REQ_2.14 | API | P1 | Draft
+  Description: Query DB: SELECT status FROM user WHERE user_id=inactive_user_id.
+  Expected: status=inactive confirmed in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.14 Step 4** | REQ_2.14 | API | P1 | Draft
+  Description: Query audit_log: SELECT action_type FROM audit_log WHERE user_id=inactive_user_id AND action_type IN ('PHI_READ','PHI_WRITE') ORDER BY rowid DESC LIMIT 1.
+  Expected: No PHI_READ or PHI_WRITE event exists for this user_id in audit_log — confirms the request was denied at status check before any data access or role evaluation occurred.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-2.15 - Suspended User Receives 403 Before Role Check; DB Confirms Audit Event | User
+*Preconditions: A user account exists in DB with status=suspended. Valid credentials are available.*
+
+**TC-2.15 Step 1** | REQ_2.15 | API | P1 | Draft
+  Description: Send GET /participants/{any_valid_participant_id} using suspended user headers (X-User-Status: suspended).
+  Expected: HTTP 403 Forbidden returned. Role is not evaluated — status check fires first.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.15 Step 2** | REQ_2.15 | API | P1 | Draft
+  Description: Query audit_log table directly: SELECT event_type, tenant_id, user_id, outcome FROM audit_log WHERE user_id=suspended_user_id.
+  Expected: Audit row exists with outcome=DENIED and tenant_id and user_id non-null.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.15 Step 3** | REQ_2.15 | API | P1 | Draft
+  Description: Query DB: SELECT status FROM user WHERE user_id=suspended_user_id.
+  Expected: status=suspended confirmed in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-2.15 Step 4** | REQ_2.15 | API | P1 | Draft
+  Description: Query audit_log: SELECT action_type FROM audit_log WHERE user_id=suspended_user_id AND action_type IN ('PHI_READ','PHI_WRITE') ORDER BY rowid DESC LIMIT 1.
+  Expected: No PHI_READ or PHI_WRITE event exists for this user_id in audit_log — confirms the request was denied at status check before any data access or role evaluation occurred.
+  Regulatory: HIPAA §164.308(a)(4)
+
+*Total steps in User: 63*
+
+
+## Sheet: Attendance
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-3.1 - Positive Attendance Creation by program_administrator Returns 201 | Attendance
+*Preconditions: A participant exists in tenant-aaa-001 with a known participant_id. Program_administrator role is authenticated with valid X-User-Role and X-Tenant-Id headers. No attendance record exists for this participant on date fixture_date_of_service.*
+
+**TC-3.1 Step 1** | REQ_3.2 | API | High | Draft
+  Description: Prepare a POST /attendance JSON payload containing tenant_id="tenant-aaa-001", participant_id of the seeded participant, and date_of_service="fixture_date_of_service".
+  Expected: Payload is correctly formed. Required fields tenant_id, participant_id, and date_of_service are present.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.1 Step 2** | REQ_3.2 | API | High | Draft
+  Description: Send POST /attendance with program_administrator headers (X-User-Role: program_administrator, X-User-Status: active, X-User-MFA: true).
+  Expected: HTTP 201 Created. Response body contains attendance_id, participant_id, date_of_service, and status="pending".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.1 Step 3** | REQ_3.2 | API | High | Draft
+  Description: Assert response status code equals 201.
+  Expected: HTTP 201 Created. Response body contains attendance_id, participant_id, date_of_service, and status="pending".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.1 Step 4** | REQ_3.2 | API | High | Draft
+  Description: Assert response body contains a non-null attendance_id, the correct participant_id, date_of_service="fixture_date_of_service", and status="pending".
+  Expected: HTTP 201 Created. Response body contains attendance_id, participant_id, date_of_service, and status="pending".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-3.2 - Positive Attendance Creation by care_coordinator Returns 201 | Attendance
+*Preconditions: A participant exists in tenant-aaa-001 with a known participant_id. care_coordinator role is authenticated with valid headers. No attendance record exists for this participant on date fixture_date_of_service.*
+
+**TC-3.2 Step 1** | REQ_3.2 | API | High | Draft
+  Description: Prepare a POST /attendance JSON payload with tenant_id, participant_id, and date_of_service="fixture_date_of_service".
+  Expected: Payload is correctly formed with all required fields.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.2 Step 2** | REQ_3.2 | API | High | Draft
+  Description: Send POST /attendance with care_coordinator headers (X-User-Role: care_coordinator, X-User-Status: active, X-User-MFA: true).
+  Expected: HTTP 201 Created. Response body contains attendance_id and status="pending". care_coordinator is in WRITE_ROLES["attendance"].
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.2 Step 3** | REQ_3.2 | API | High | Draft
+  Description: Assert response status code equals 201.
+  Expected: HTTP 201 Created. Response body contains attendance_id and status="pending". care_coordinator is in WRITE_ROLES["attendance"].
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.2 Step 4** | REQ_3.2 | API | High | Draft
+  Description: Assert response body contains a non-null attendance_id, the correct participant_id, date_of_service="fixture_date_of_service", and status="pending".
+  Expected: HTTP 201 Created. Response body contains attendance_id and status="pending". care_coordinator is in WRITE_ROLES["attendance"].
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-3.3 - Missing date_of_service by program_administrator Returns 400
+*Preconditions: A participant exists in tenant-aaa-001. Program_administrator role is authenticated. The request payload is prepared without the date_of_service field.*
+
+**TC-3.3 Step 1** | REQ_3.2 | API | High | Draft
+  Description: Prepare a POST /attendance JSON payload containing tenant_id and participant_id but deliberately omitting the date_of_service field.
+  Expected: HTTP 400 or 422. Response body identifies "date_of_service" by name as the missing field. No attendance record is created in the database.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.3 Step 2** | REQ_3.2 | API | High | Draft
+  Description: Send POST /attendance using program_administrator headers.
+  Expected: HTTP 400 or 422. Response body identifies "date_of_service" by name as the missing field. No attendance record is created in the database.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.3 Step 3** | REQ_3.2 | API | High | Draft
+  Description: Assert response status code is 400 or 422.
+  Expected: HTTP 400 or 422. Response body identifies "date_of_service" by name as the missing field. No attendance record is created in the database.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.3 Step 4** | REQ_3.2 | API | High | Draft
+  Description: Assert the response body text contains the string "date_of_service", identifying it as the missing required field.
+  Expected: HTTP 400 or 422. Response body identifies "date_of_service" by name as the missing field. No attendance record is created in the database.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-3.4 - Missing participant_id by care_coordinator Returns 400
+*Preconditions: care_coordinator role is authenticated. The request payload is prepared without the participant_id field. date_of_service and tenant_id are present.*
+
+**TC-3.4 Step 1** | REQ_3.2 | API | High | Draft
+  Description: Prepare a POST /attendance JSON payload with tenant_id and date_of_service but deliberately omitting the participant_id field.
+  Expected: HTTP 400 or 422. Response body identifies "participant_id" by name as the missing field. No attendance record is created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.4 Step 2** | REQ_3.2 | API | High | Draft
+  Description: Send POST /attendance using care_coordinator headers.
+  Expected: HTTP 400 or 422. Response body identifies "participant_id" by name as the missing field. No attendance record is created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.4 Step 3** | REQ_3.2 | API | High | Draft
+  Description: Assert response status code is 400 or 422.
+  Expected: HTTP 400 or 422. Response body identifies "participant_id" by name as the missing field. No attendance record is created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.4 Step 4** | REQ_3.2 | API | High | Draft
+  Description: Assert the response body text contains the string "participant_id", identifying it as the missing required field.
+  Expected: HTTP 400 or 422. Response body identifies "participant_id" by name as the missing field. No attendance record is created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-3.5 - Duplicate participant_id + date_of_service Returns 409 ATTENDANCE_DUPLICATE_DATE | Attendance
+*Preconditions: An attendance record already exists in tenant-aaa-001 for participant P1 on date_of_service="fixture_date_of_service". Program_administrator role is authenticated. The unique constraint on (tenant_id, participant_id, date_of_service) is enforced at both API and database layers.*
+
+**TC-3.5 Step 1** | REQ_3.1 | API | High | Draft
+  Description: Send POST /attendance with tenant_id="tenant-aaa-001", the same participant_id as the existing record, and date_of_service="fixture_date_of_service".
+  Expected: HTTP 409 Conflict. Response body contains error_code="ATTENDANCE_DUPLICATE_DATE". No duplicate attendance row is created in the database.
+  Regulatory: CMS Medicaid Billing Integrity
+
+**TC-3.5 Step 2** | REQ_3.1 | API | High | Draft
+  Description: Assert response status code equals 409.
+  Expected: HTTP 409 Conflict. Response body contains error_code="ATTENDANCE_DUPLICATE_DATE". No duplicate attendance row is created in the database.
+  Regulatory: CMS Medicaid Billing Integrity
+
+**TC-3.5 Step 3** | REQ_3.1 | API | High | Draft
+  Description: Assert response body detail.error_code equals "ATTENDANCE_DUPLICATE_DATE".
+  Expected: HTTP 409 Conflict. Response body contains error_code="ATTENDANCE_DUPLICATE_DATE". No duplicate attendance row is created in the database.
+  Regulatory: CMS Medicaid Billing Integrity
+
+**TC-3.5 Step 4** | REQ_3.1 | DB | High | Draft
+  Description: Query the database directly and assert only one attendance row exists for participant P1 on fixture_date_of_service in tenant-aaa-001.
+  Expected: HTTP 409 Conflict. Response body contains error_code="ATTENDANCE_DUPLICATE_DATE". No duplicate attendance row is created in the database.
+  Regulatory: CMS Medicaid Billing Integrity
+
+### TC-3.6 - Status Transition pending to confirmed Returns 200 | Attendance
+*Preconditions: An attendance record with status="pending" exists in tenant-aaa-001. Program_administrator role is authenticated. The attendance_id and current version number are known.*
+
+**TC-3.6 Step 1** | REQ_3.3 | API | High | Draft
+  Description: Retrieve the pending attendance record via GET /attendance/{attendance_id} using program_administrator headers. Capture the returned version.
+  Expected: HTTP 200 OK. Response includes the attendance record with status="pending" and a version field.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.6 Step 2** | REQ_3.3 | Business Rules | High | Draft
+  Description: Send PATCH /attendance/{attendance_id} with a JSON body containing the captured version and status="confirmed".
+  Expected: HTTP 200 OK. Response body shows status="confirmed" and version incremented by 1. Transition from pending to confirmed is a valid workflow step.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.6 Step 3** | REQ_3.3 | Business Rules | High | Draft
+  Description: Assert response status code equals 200.
+  Expected: HTTP 200 OK. Response body shows status="confirmed" and version incremented by 1. Transition from pending to confirmed is a valid workflow step.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.6 Step 4** | REQ_3.3 | Business Rules | High | Draft
+  Description: Assert response body shows status="confirmed" and version equals the previous version plus 1.
+  Expected: HTTP 200 OK. Response body shows status="confirmed" and version incremented by 1. Transition from pending to confirmed is a valid workflow step.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-3.7 - Void Attendance with void_reason Returns 200 status voided | Attendance
+*Preconditions: An attendance record with status="pending" exists in tenant-aaa-001. Program_administrator role is authenticated. The attendance_id and current version are known.*
+
+**TC-3.7 Step 1** | REQ_3.4 | API | High | Draft
+  Description: Retrieve the pending attendance record via GET /attendance/{attendance_id} and capture its current version.
+  Expected: HTTP 200 OK. Attendance record returned with status="pending" and version field present.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.7 Step 2** | REQ_3.4 | Business Rules | High | Draft
+  Description: Send PATCH /attendance/{attendance_id} with JSON body containing the captured version, status="voided", and void_reason="Data entry error".
+  Expected: HTTP 200 OK. Response body shows status="voided" and void_reason="Data entry error" is preserved. Version is incremented by 1.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.7 Step 3** | REQ_3.4 | Business Rules | High | Draft
+  Description: Assert response status code equals 200.
+  Expected: HTTP 200 OK. Response body shows status="voided" and void_reason="Data entry error" is preserved. Version is incremented by 1.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.7 Step 4** | REQ_3.4 | Business Rules | High | Draft
+  Description: Assert response body shows status="voided", void_reason="Data entry error", and version incremented by 1.
+  Expected: HTTP 200 OK. Response body shows status="voided" and void_reason="Data entry error" is preserved. Version is incremented by 1.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-3.8 - Void Attempt Without void_reason Returns 400 | Attendance
+*Preconditions: An attendance record with status="pending" exists in tenant-aaa-001. Program_administrator role is authenticated. The request intentionally omits void_reason.*
+
+**TC-3.8 Step 1** | REQ_3.4 | API | High | Draft
+  Description: Retrieve the pending attendance record via GET /attendance/{attendance_id} and capture its current version.
+  Expected: HTTP 200 OK. Attendance record returned with status="pending".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.8 Step 2** | REQ_3.4 | Business Rules | High | Draft
+  Description: Send PATCH /attendance/{attendance_id} with JSON body containing the captured version and status="voided" but no void_reason field.
+  Expected: HTTP 400 or 422. void_reason is identified as required when transitioning to voided. Attendance status remains "pending" unchanged.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.8 Step 3** | REQ_3.4 | Business Rules | High | Draft
+  Description: Assert response status code is 400 or 422.
+  Expected: HTTP 400 or 422. void_reason is identified as required when transitioning to voided. Attendance status remains "pending" unchanged.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-3.8 Step 4** | REQ_3.4 | Business Rules | High | Draft
+  Description: Assert attendance status remains "pending" in the database. Assert the error message references void_reason as the missing field.
+  Expected: HTTP 400 or 422. void_reason is identified as required when transitioning to voided. Attendance status remains "pending" unchanged.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-3.9 - Billing Units Calculation: total_hours Converts to authorized_units_consumed | Attendance
+*Preconditions: A participant with Medicaid payer type exists. Program_administrator role is authenticated. Medicaid conversion rate is 1 hour = 4 authorized units per CMS billing rules.*
+
+**TC-3.9 Step 1** | REQ_3.6 | Business Rules | High | Draft
+  Description: Send POST /attendance with total_hours=6 for a Medicaid participant on date fixture_date_of_service.
+  Expected: authorized_units_consumed = total_hours × 4 for Medicaid payer. Value is calculated server-side and persisted correctly.
+  Regulatory: CMS Medicaid/Medicare
+
+**TC-3.9 Step 2** | REQ_3.6 | Business Rules | High | Draft
+  Description: Assert the response body field authorized_units_consumed equals 24 (6 × 4).
+  Expected: authorized_units_consumed = total_hours × 4 for Medicaid payer. Value is calculated server-side and persisted correctly.
+  Regulatory: CMS Medicaid/Medicare
+
+**TC-3.9 Step 3** | REQ_3.6 | Business Rules | High | Draft
+  Description: Send POST /attendance with total_hours=8 for the same Medicaid participant on fixture_date_of_service_b (a separate date offset, distinct from fixture_date_of_service_a used in Step 1, to avoid ATTENDANCE_DUPLICATE_DATE constraint).
+  Expected: HTTP 201 Created. authorized_units_consumed=32.0 (8 x 4). Server-side calculation confirmed. fixture_date_of_service_b is distinct from fixture_date_of_service_a.
+  Regulatory: CMS Medicaid/Medicare
+
+**TC-3.9 Step 4** | REQ_3.6 | Business Rules | High | Draft
+  Description: Assert the response body field authorized_units_consumed equals 32 (8 × 4).
+  Expected: authorized_units_consumed = total_hours × 4 for Medicaid payer. Value is calculated server-side and persisted correctly.
+  Regulatory: CMS Medicaid/Medicare
+
+### TC-3.10 - Billed Attendance Cannot Be Modified Returns 422 | Attendance
+*Preconditions: An attendance record with status="billed" exists, produced by a successful claim submission that referenced this attendance. Program_administrator role is authenticated. The attendance_id and current version are known.*
+
+**TC-3.10 Step 1** | REQ_3.3 | API | High | Draft
+  Description: Retrieve the billed attendance record via GET /attendance/{attendance_id} and capture its attendance_id and current version.
+  Expected: HTTP 422 Unprocessable Entity. Attendance record remains unchanged. Billed records are immutable to prevent retroactive modification of billing artifacts.
+  Regulatory: CMS Medicaid Billing Integrity
+
+**TC-3.10 Step 2** | REQ_3.3 | Business Rules | High | Draft
+  Description: Send PATCH /attendance/{attendance_id} with the current version and a modified value for date_of_service.
+  Expected: HTTP 422 Unprocessable Entity. Attendance record remains unchanged. Billed records are immutable to prevent retroactive modification of billing artifacts.
+  Regulatory: CMS Medicaid Billing Integrity
+
+**TC-3.10 Step 3** | REQ_3.3 | Business Rules | High | Draft
+  Description: Assert response status code equals 422.
+  Expected: HTTP 422 Unprocessable Entity. Attendance record remains unchanged. Billed records are immutable to prevent retroactive modification of billing artifacts.
+  Regulatory: CMS Medicaid Billing Integrity
+
+**TC-3.10 Step 4** | REQ_3.3 | DB | High | Draft
+  Description: Assert attendance status remains "billed" and date_of_service is unchanged in the database.
+  Expected: HTTP 422 Unprocessable Entity. Attendance record remains unchanged. Billed records are immutable to prevent retroactive modification of billing artifacts.
+  Regulatory: CMS Medicaid Billing Integrity
+
+### TC-3.11 - Audit Log on Attendance Creation Has All 11 Mandatory Fields | Attendance
+*Preconditions: A participant exists in tenant-aaa-001. Program_administrator role is used for attendance creation. compliance_officer role is authenticated for audit log retrieval. GET /audit-logs endpoint is available and returns 200.*
+
+**TC-3.11 Step 1** | REQ_3.5 | Business Rules | High | Draft
+  Description: Send POST /attendance using program_administrator headers to create a new attendance record. Capture the returned attendance_id.
+  Expected: PHI_WRITE audit event is present with all 11 mandatory fields non-null and outcome=SUCCESS. data_affected contains field names only, no PHI values.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-3.11 Step 2** | REQ_3.5 | Business Rules | High | Draft
+  Description: Send GET /audit-logs with query params tenant_id="tenant-aaa-001", resource_type="Attendance", and resource_id equal to the captured attendance_id, using compliance_officer headers.
+  Expected: PHI_WRITE audit event is present with all 11 mandatory fields non-null and outcome=SUCCESS. data_affected contains field names only, no PHI values.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-3.11 Step 3** | REQ_3.5 | Business Rules | High | Draft
+  Description: Assert GET /audit-logs returns HTTP 200. Assert the response list contains at least one event with action_type="PHI_WRITE" for the created attendance record.
+  Expected: PHI_WRITE audit event is present with all 11 mandatory fields non-null and outcome=SUCCESS. data_affected contains field names only, no PHI values.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-3.11 Step 4** | REQ_3.5 | Business Rules | High | Draft
+  Description: Assert all 11 mandatory fields are non-null in the PHI_WRITE event: timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: PHI_WRITE audit event is present with all 11 mandatory fields non-null and outcome=SUCCESS. data_affected contains field names only, no PHI values.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-3.11 Step 5** | REQ_3.5 | Business Rules | High | Draft
+  Description: Assert data_affected contains only field names (e.g., "date_of_service", "participant_id") and does not contain any PHI values such as participant names, dates of birth, or Medicaid IDs.
+  Expected: PHI_WRITE audit event is present with all 11 mandatory fields non-null and outcome=SUCCESS. data_affected contains field names only, no PHI values.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+### TC-3.12 - billing_specialist Attempts to Create Attendance Returns 403 | Attendance
+*Preconditions: A participant exists in tenant-aaa-001. billing_specialist role is authenticated with valid headers. WRITE_ROLES["attendance"] = {"program_administrator", "care_coordinator"} — billing_specialist is excluded.*
+
+**TC-3.12 Step 1** | REQ_3.2 | API | High | Draft
+  Description: Prepare a POST /attendance JSON payload with a valid tenant_id, participant_id, and date_of_service.
+  Expected: HTTP 403 Forbidden. No attendance record is created. billing_specialist is authorized to read attendance records but not to create or modify them.
+  Regulatory: HIPAA §164.312(a)(1); CMS Medicaid/Medicare
+
+**TC-3.12 Step 2** | REQ_3.2 | API | High | Draft
+  Description: Send POST /attendance using billing_specialist headers (X-User-Role: billing_specialist, X-User-Status: active, X-User-MFA: true).
+  Expected: HTTP 403 Forbidden. No attendance record is created. billing_specialist is authorized to read attendance records but not to create or modify them.
+  Regulatory: HIPAA §164.312(a)(1); CMS Medicaid/Medicare
+
+**TC-3.12 Step 3** | REQ_3.2 | API | High | Draft
+  Description: Assert response status code equals 403.
+  Expected: HTTP 403 Forbidden. No attendance record is created. billing_specialist is authorized to read attendance records but not to create or modify them.
+  Regulatory: HIPAA §164.312(a)(1); CMS Medicaid/Medicare
+
+**TC-3.12 Step 4** | REQ_3.2 | DB | High | Draft
+  Description: Assert no attendance record was created for the given participant_id and date_of_service in the database.
+  Expected: HTTP 403 Forbidden. No attendance record is created. billing_specialist is authorized to read attendance records but not to create or modify them.
+  Regulatory: HIPAA §164.312(a)(1); CMS Medicaid/Medicare
+
+*Total steps in Attendance: 49*
+
+
+## Sheet: Claim
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-4.1 - POST /claims with Duplicate claim_reference_number Returns 409 CLAIM_DUPLICATE_REFERENCE; DB Confirms Exactly One Claim with That Reference | Claim
+
+**billing_specialist is authenticated in tenant-aaa-001 (X-User-Status: active, X-User-MFA: true). A claim with a system-generated claim_reference_number (seeded directly in DB via fixture, stored as fixture_claim_ref) exists for tenant-aaa-001. A confirmed attendance record att-001 exists for participant P1.** | REQ_billing_specialist is authenticated in tenant-aaa-001 (X-User-Status: active, X-User-MFA: true). A claim with a system-generated claim_reference_number (seeded directly in DB via fixture, stored as fixture_claim_ref) exists for tenant-aaa-001. A confirmed attendance record att-001 exists for participant P1. | billing_specialist is authenticated in tenant-aaa-001 (X-User-Status: active, X-User-MFA: true). A claim with a system-generated claim_reference_number (seeded directly in DB via fixture, stored as fixture_claim_ref) exists for tenant-aaa-001. A confirmed attendance record att-001 exists for participant P1. | billing_specialist is authenticated in tenant-aaa-001 (X-User-Status: active, X-User-MFA: true). A claim with a system-generated claim_reference_number (seeded directly in DB via fixture, stored as fixture_claim_ref) exists for tenant-aaa-001. A confirmed attendance record att-001 exists for participant P1. | billing_specialist is authenticated in tenant-aaa-001 (X-User-Status: active, X-User-MFA: true). A claim with a system-generated claim_reference_number (seeded directly in DB via fixture, stored as fixture_claim_ref) exists for tenant-aaa-001. A confirmed attendance record att-001 exists for participant P1.
+  Description: billing_specialist is authenticated in tenant-aaa-001 (X-User-Status: active, X-User-MFA: true). A claim with a system-generated claim_reference_number (seeded directly in DB via fixture, stored as fixture_claim_ref) exists for tenant-aaa-001. A confirmed attendance record att-001 exists for participant P1.
+  Expected: billing_specialist is authenticated in tenant-aaa-001 (X-User-Status: active, X-User-MFA: true). A claim with a system-generated claim_reference_number (seeded directly in DB via fixture, stored as fixture_claim_ref) exists for tenant-aaa-001. A confirmed attendance record att-001 exists for participant P1.
+  Regulatory: billing_specialist is authenticated in tenant-aaa-001 (X-User-Status: active, X-User-MFA: true). A claim with a system-generated claim_reference_number (seeded directly in DB via fixture, stored as fixture_claim_ref) exists for tenant-aaa-001. A confirmed attendance record att-001 exists for participant P1.
+
+**TC-4.1 Step 1** | REQ_4.1 | DB | High | Draft
+  Description: Verify pre-condition: SELECT COUNT(*) FROM claim WHERE claim_reference_number=fixture_claim_ref AND tenant_id='tenant-aaa-001'. Assert count=1.
+  Expected: Count=1. Pre-seeded claim with fixture_claim_ref confirmed present before the POST attempt.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.1 Step 2** | REQ_4.1 | API | High | Draft
+  Description: Send POST /claims with billing_specialist headers. Body: valid payload referencing att-001. Use a test fixture that forces the server to generate claim_reference_number equal to fixture_claim_ref (same as the pre-seeded record).
+  Expected: HTTP 409 Conflict. Server detects the duplicate claim_reference_number. Response body contains error_code="CLAIM_DUPLICATE_REFERENCE".
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.1 Step 3** | REQ_4.1 | API | High | Draft
+  Description: Assert response HTTP status code equals 409.
+  Expected: HTTP 409 Conflict.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.1 Step 4** | REQ_4.1 | API | High | Draft
+  Description: Assert response body detail.error_code = "CLAIM_DUPLICATE_REFERENCE" and message describes the reference number collision.
+  Expected: detail.error_code = "CLAIM_DUPLICATE_REFERENCE". Message indicates the reference number could not be made unique.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.1 Step 5** | REQ_4.1 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE claim_reference_number=fixture_claim_ref AND tenant_id='tenant-aaa-001'. Assert count=1.
+  Expected: Count=1. Exactly one claim exists with fixture_claim_ref. No duplicate was created by the failed POST.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+### TC-4.2 - Composite Duplicate participant_id + date_of_service_start + procedure_code + payer_type Returns 409 CLAIM_DUPLICATE | Claim
+*Preconditions: A claim record already exists in tenant-aaa-001 with participant_id=P1, date_of_service_start="fixture_date_of_service_start", procedure_code="T2029", payer_type="medicaid", claim_status="draft". A second confirmed attendance record att-002 exists for P1 in tenant-aaa-001. billing_specialist is authenticated.*
+
+**TC-4.2 Step 1** | REQ_4.2 | DB | High | Draft
+  Description: Confirm via DB query: SELECT COUNT(*) FROM claim WHERE tenant_id="tenant-aaa-001" AND participant_id="<P1_id>" AND date_of_service_start="fixture_date_of_service_start" AND procedure_code="T2029" AND payer_type="medicaid". Assert count = 1.
+  Expected: Exactly one claim record matching the composite key exists in the DB.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.2 Step 2** | REQ_4.2 | API | High | Draft
+  Description: Send POST /claims with billing_specialist headers. Body: {"tenant_id":"tenant-aaa-001","participant_id":"<P1_id>","attendance_ids":["<att-002_id>"],"payer_type":"medicaid","procedure_code":"T2029","date_of_service_start":"fixture_date_of_service_start"}.
+  Expected: HTTP 409 Conflict. error_code="CLAIM_DUPLICATE". No new claim is created.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.2 Step 3** | REQ_4.2 | API | High | Draft
+  Description: Assert response status code equals 409.
+  Expected: HTTP 409 Conflict.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.2 Step 4** | REQ_4.2 | API | High | Draft
+  Description: Assert response body detail.error_code = "CLAIM_DUPLICATE". Assert message references the duplicate combination (participant, date of service, procedure, payer).
+  Expected: error_code = "CLAIM_DUPLICATE". Message describes the composite key collision.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.2 Step 5** | REQ_4.2 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE tenant_id="tenant-aaa-001" AND participant_id="<P1_id>" AND date_of_service_start="fixture_date_of_service_start" AND procedure_code="T2029" AND payer_type="medicaid". Assert count still equals 1.
+  Expected: Count = 1. Only the original claim exists. No duplicate record was created.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+### TC-4.3 - Unauthorized Roles POST /claims Returns 403 RBAC_DENIED; DB Claim Count Unchanged | Claim
+*Preconditions: Four user accounts exist in tenant-aaa-001 with roles care_coordinator, nurse_medication_aide, physician, participant_family. All have X-User-Status: active, X-User-MFA: true. A confirmed attendance record att-003 exists for participant P1. Initial claim count in tenant-aaa-001 is recorded as N.*
+
+**TC-4.3 Step 1** | REQ_4.3 | API | High | Draft
+  Description: Send POST /claims with X-User-Role: care_coordinator headers for tenant-aaa-001. Body: valid claim payload referencing att-003 with required fields. Assert response status equals 403.
+  Expected: HTTP 403 Forbidden. error_code="RBAC_DENIED". care_coordinator is not permitted to create claims.
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+**TC-4.3 Step 2** | REQ_4.3 | API | High | Draft
+  Description: Send POST /claims with X-User-Role: nurse_medication_aide headers. Body: same valid payload. Assert response status equals 403.
+  Expected: HTTP 403 Forbidden. error_code="RBAC_DENIED". nurse_medication_aide is not permitted to create claims.
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+**TC-4.3 Step 3** | REQ_4.3 | API | High | Draft
+  Description: Send POST /claims with X-User-Role: physician headers. Body: same valid payload. Assert response status equals 403.
+  Expected: HTTP 403 Forbidden. error_code="RBAC_DENIED". physician is not permitted to create claims.
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+**TC-4.3 Step 4** | REQ_4.3 | API | High | Draft
+  Description: Send POST /claims with X-User-Role: participant_family headers. Body: same valid payload. Assert response status equals 403.
+  Expected: HTTP 403 Forbidden. error_code="RBAC_DENIED". participant_family is not permitted to create claims.
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+**TC-4.3 Step 5** | REQ_4.3 | API | High | Draft
+  Description: Assert all four responses have status 403 and detail.error_code="RBAC_DENIED". Confirm no response returned 201.
+  Expected: All 4 unauthorized roles receive HTTP 403 RBAC_DENIED. Zero successful claim creations.
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+**TC-4.3 Step 6** | REQ_4.3 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE tenant_id="tenant-aaa-001". Assert count still equals N.
+  Expected: DB claim count = N. No new claims created by any unauthorized role attempt.
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+### TC-4.4 - PATCH Submitted Claim Non-Status Field Returns 422 CLAIM_STATUS_IMMUTABLE; Status Transition Returns 200; PATCH Paid Claim Returns 422; DB Status Unchanged After Rejected Edits | Claim
+*Preconditions: Claim A (C_A) exists in tenant-aaa-001 with claim_status="submitted" and version=1. Claim B (C_B) exists with claim_status="paid" and version=2. billing_specialist is authenticated.*
+
+**TC-4.4 Step 1** | REQ_4.4 | API | High | Draft
+  Description: GET /claims/<C_A_id> with billing_specialist headers. Confirm claim_status="submitted" and capture version=1.
+  Expected: HTTP 200. claim_status="submitted", version=1.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.4 Step 2** | REQ_4.4 | API | High | Draft
+  Description: PATCH /claims/<C_A_id> with body {"version":1,"rejection_reason":"Test edit on submitted claim"}. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="CLAIM_STATUS_IMMUTABLE". Non-status fields cannot be modified on a submitted claim.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.4 Step 3** | REQ_4.4 | DB | High | Draft
+  Description: Query DB: SELECT claim_status, version FROM claim WHERE claim_id="<C_A_id>". Assert claim_status="submitted" and version=1 (unchanged after the rejected PATCH).
+  Expected: claim_status="submitted", version=1. No changes applied by the rejected request.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.4 Step 4** | REQ_4.4 | API | High | Draft
+  Description: PATCH /claims/<C_A_id> with body {"version":1,"claim_status":"accepted"}. Assert response status equals 200. Assert response body claim_status="accepted" and version=2.
+  Expected: HTTP 200 OK. claim_status="accepted", version=2. Status transition from submitted to accepted succeeds.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.4 Step 5** | REQ_4.4 | API | High | Draft
+  Description: GET /claims/<C_B_id> to confirm claim_status="paid" and version=2.
+  Expected: HTTP 200. claim_status="paid", version=2.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.4 Step 6** | REQ_4.4 | API | High | Draft
+  Description: PATCH /claims/<C_B_id> with body {"version":2,"rejection_reason":"Attempt to modify paid claim"}. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="CLAIM_STATUS_IMMUTABLE". Paid claim is fully immutable.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.4 Step 7** | REQ_4.4 | DB | High | Draft
+  Description: Query DB: SELECT claim_status, version FROM claim WHERE claim_id="<C_B_id>". Assert claim_status="paid" and version=2.
+  Expected: claim_status="paid", version=2. No modifications applied to the paid claim.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+### TC-4.5 - POST /claims References Non-Confirmed Attendance Returns 422; Cross-Tenant Returns 422 or 404; Confirmed Attendance Returns 201 and Sets Attendance Status Billed | Claim
+*Preconditions: Three attendance records exist in tenant-aaa-001: att-pending (status="pending"), att-voided (status="voided"), att-confirmed (status="confirmed"). A fourth record att-other-tenant exists in tenant-bbb-002 (different tenant) with status="confirmed". billing_specialist is authenticated with X-Tenant-Id: tenant-aaa-001.*
+
+**TC-4.5 Step 1** | REQ_4.5 | API | High | Draft
+  Description: POST /claims with billing_specialist headers and attendance_ids=[att-pending_id] plus all required fields. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="ATTENDANCE_NOT_CONFIRMED". Pending attendance cannot be used in a claim.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.5 Step 2** | REQ_4.5 | API | High | Draft
+  Description: POST /claims with attendance_ids=[att-voided_id] plus all required fields. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="ATTENDANCE_NOT_CONFIRMED". Voided attendance cannot be used in a claim.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.5 Step 3** | REQ_4.5 | API | High | Draft
+  Description: POST /claims with attendance_ids=[att-other-tenant_id] from tenant-bbb-002, using billing_specialist headers for tenant-aaa-001. Assert response status equals 422 or 404.
+  Expected: HTTP 422 or 404. Cross-tenant attendance is not visible to tenant-aaa-001. Request rejected.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.5 Step 4** | REQ_4.5 | API | High | Draft
+  Description: POST /claims with attendance_ids=[att-confirmed_id] and all required fields (tenant_id, participant_id, payer_type, procedure_code, date_of_service_start). Assert response status equals 201.
+  Expected: HTTP 201 Created. Response body contains claim_id, claim_reference_number, claim_status="draft".
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.5 Step 5** | REQ_4.5 | Business Rules | High | Draft
+  Description: Assert response body contains a non-null claim_id, claim_status="draft", and claim_reference_number matching pattern MCD-YYYYMMDD-XXXXXXXX or MCR-YYYYMMDD-XXXXXXXX.
+  Expected: claim_id present, claim_status="draft", claim_reference_number in expected format.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.5 Step 6** | REQ_4.5 | DB | High | Draft
+  Description: Query DB: SELECT status FROM attendance WHERE attendance_id="<att-confirmed_id>". Assert status="billed".
+  Expected: att-confirmed status = "billed" after successful claim creation. Attendance auto-updated by the POST /claims endpoint.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+### TC-4.6 - POST /claims Multiple Confirmed Attendance Records Returns 201; DB units_billed Sum; Non-Existent Attendance UUID Returns 422 CLAIM_ATTENDANCE_NOT_FOUND | Claim
+*Preconditions: Three confirmed attendance records exist in tenant-aaa-001 for participant P1: att-A (authorized_units_consumed=4.0), att-B (authorized_units_consumed=6.0), att-C (authorized_units_consumed=8.0). billing_specialist is authenticated.*
+
+**TC-4.6 Step 1** | REQ_4.6 | API | Medium | Draft
+  Description: POST /claims with billing_specialist headers. Body: {"tenant_id":"tenant-aaa-001","participant_id":"<P1_id>","attendance_ids":["<att-A_id>","<att-B_id>","<att-C_id>"],"payer_type":"medicaid","procedure_code":"T2029","date_of_service_start":"fixture_date_of_service_start"}. units_billed is intentionally omitted from the payload. Assert response status equals 201.
+  Expected: HTTP 201 Created. Server calculates units_billed = 18.0 as the sum of authorized_units_consumed from all three referenced attendance records (4.0 + 6.0 + 8.0). Claim created with server-calculated value.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.6 Step 2** | REQ_4.6 | Business Rules | Medium | Draft
+  Description: Assert response body attendance_ids contains att-A_id, att-B_id, and att-C_id. Assert response body units_billed = 18.0 (server-calculated sum, not caller-supplied).
+  Expected: Response attendance_ids = [att-A_id, att-B_id, att-C_id]. units_billed = 18.0 (4.0 + 6.0 + 8.0). Server-calculated; no caller value required.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.6 Step 3** | REQ_4.6 | DB | Medium | Draft
+  Description: Query DB: SELECT units_billed FROM claim WHERE claim_id = {returned_claim_id}. Assert units_billed = 18.0.
+  Expected: DB units_billed = 18.0. Server-calculated value persisted correctly.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.6 Step 4** | REQ_4.6 | DB | Medium | Draft
+  Description: Query DB: SELECT status FROM attendance WHERE attendance_id IN (att-A_id, att-B_id, att-C_id). Assert all three statuses = "billed".
+  Expected: All three referenced attendance records have status = "billed" after claim creation.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.6 Step 5** | REQ_4.6 | API | Medium | Draft
+  Description: POST /claims with attendance_ids=["00000000-0000-0000-0000-000000000000"] (non-existent UUID) and all other required fields. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="CLAIM_ATTENDANCE_NOT_FOUND". Non-existent attendance UUID rejected.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.6 Step 6** | REQ_4.6 | API | Medium | Draft
+  Description: Assert error_code = "CLAIM_ATTENDANCE_NOT_FOUND" and message contains the invalid UUID "00000000-0000-0000-0000-000000000000" for identification.
+  Expected: detail.error_code="CLAIM_ATTENDANCE_NOT_FOUND". Message includes the non-existent UUID.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-4.7 - POST /claims Missing Required Fields participant_id, procedure_code, payer_type Each Return 400 | Claim
+*Preconditions: billing_specialist is authenticated in tenant-aaa-001. A confirmed attendance record att-001 exists. Three separate payloads are prepared each omitting one required field.*
+
+**TC-4.7 Step 1** | REQ_4.7 | API | Medium | Draft
+  Description: POST /claims omitting participant_id. Include all other required fields (tenant_id, attendance_ids, payer_type, procedure_code, date_of_service_start). Assert response status is 400 or 422 and response body contains the string "participant_id".
+  Expected: HTTP 400 or 422. Response text contains "participant_id" identifying the missing field.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.7 Step 2** | REQ_4.7 | API | Medium | Draft
+  Description: POST /claims omitting procedure_code. Include all other required fields. Assert response status is 400 or 422 and response body contains the string "procedure_code".
+  Expected: HTTP 400 or 422. Response text contains "procedure_code".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.7 Step 3** | REQ_4.7 | API | Medium | Draft
+  Description: POST /claims omitting payer_type. Include all other required fields. Assert response status is 400 or 422 and response body contains the string "payer_type".
+  Expected: HTTP 400 or 422. Response text contains "payer_type".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.7 Step 4** | REQ_4.7 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE tenant_id='tenant-aaa-001' AND participant_id=<P1_id>. Assert count_after equals count_before captured at test start.
+  Expected: count_after equals count_before. No new claims created by any of the three invalid requests.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-4.8 - POST /claims Produces PHI_WRITE Audit Event with All 11 Mandatory Fields; PATCH draft to submitted Produces PHI_DISCLOSE; GET /audit-logs Returns Both Events | Claim
+*Preconditions: billing_specialist (X-User-Id: user-billing-001, X-Session-Id: sess-tc48) is authenticated in tenant-aaa-001. A confirmed attendance record att-audit-001 exists for participant P1. compliance_officer is available for audit log reads.*
+
+**TC-4.8 Step 1** | REQ_4.8 | API | High | Draft
+  Description: POST /claims with billing_specialist headers (X-User-Id: user-billing-001, X-Session-Id: sess-tc48). Body: valid payload referencing att-audit-001. Assert response status equals 201. Record returned claim_id.
+  Expected: HTTP 201 Created. claim_id returned in response.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-4.8 Step 2** | REQ_4.8 | API | High | Draft
+  Description: GET /audit-logs?tenant_id=tenant-aaa-001&resource_type=Claim&resource_id={claim_id} using compliance_officer headers. Assert response status equals 200 and body is a non-empty JSON array.
+  Expected: HTTP 200 OK. Response is a JSON array with at least one audit entry.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-4.8 Step 3** | REQ_4.8 | Business Rules | High | Draft
+  Description: Assert the audit log array contains an entry with action_type="PHI_WRITE" and resource_id={claim_id}. Assert all 11 mandatory fields are non-null: audit_id, timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: PHI_WRITE entry present. All 11 mandatory fields non-null including layer='APP_SERVICE'. outcome='SUCCESS'.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-4.8 Step 4** | REQ_4.8 | Business Rules | High | Draft
+  Description: Assert data_affected in the PHI_WRITE entry is an array of field name strings only (e.g. "tenant_id", "procedure_code", "attendance_ids"). Assert no PHI values such as names, SSNs, or DOBs appear anywhere in the audit entry.
+  Expected: data_affected contains field names only. No PHI values exposed in audit log.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-4.8 Step 5** | REQ_4.8 | API | High | Draft
+  Description: PATCH /claims/{claim_id} with billing_specialist headers. Body: {"version":1,"claim_status":"submitted"}. Assert response status equals 200 and response shows claim_status="submitted".
+  Expected: HTTP 200 OK. claim_status = "submitted". draft-to-submitted transition triggers PHI_DISCLOSE audit event.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-4.8 Step 6** | REQ_4.8 | API | High | Draft
+  Description: GET /audit-logs?tenant_id=tenant-aaa-001&resource_type=Claim&resource_id={claim_id} using compliance_officer headers. Assert the response list contains an entry with action_type="PHI_DISCLOSE".
+  Expected: At least one audit entry with action_type="PHI_DISCLOSE" exists for the claim_id.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+**TC-4.8 Step 7** | REQ_4.8 | Business Rules | High | Draft
+  Description: Assert PHI_DISCLOSE entry data_affected = ["claim_status","submission_date","claim_reference_number"]. Assert outcome="SUCCESS". Assert no raw PHI values appear in the event.
+  Expected: PHI_DISCLOSE data_affected = ["claim_status","submission_date","claim_reference_number"]. outcome="SUCCESS". No PHI values exposed.
+  Regulatory: HIPAA §164.312(b); CMS Medicaid/Medicare
+
+### TC-4.9 - POST /claims with Empty attendance_ids Returns 422 CLAIM_NO_ATTENDANCE_RECORDS; DB No Claim Created; Server Calculates units_billed from Attendance; Caller Value Ignored | Claim
+*Preconditions: billing_specialist is authenticated in tenant-aaa-001. A confirmed attendance record att-units-001 (authorized_units_consumed=4.0) exists for participant P1.*
+
+**TC-4.9 Step 1** | REQ_4.9 | API | Medium | Draft
+  Description: POST /claims with body {"tenant_id":"tenant-aaa-001","participant_id":"<P1_id>","attendance_ids":[],"payer_type":"medicaid","procedure_code":"T2029","date_of_service_start":"fixture_date_of_service_start"}. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="CLAIM_NO_ATTENDANCE_RECORDS". Empty attendance list rejected.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.9 Step 2** | REQ_4.9 | API | Medium | Draft
+  Description: Assert response body detail.error_code = "CLAIM_NO_ATTENDANCE_RECORDS".
+  Expected: error_code = "CLAIM_NO_ATTENDANCE_RECORDS".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.9 Step 3** | REQ_4.9 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE tenant_id="tenant-aaa-001" AND date_of_service_start="fixture_date_of_service_start". Assert count = 0.
+  Expected: No claim created. DB unchanged.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.9 Step 4** | REQ_4.9 | API | Medium | Draft
+  Description: POST /claims with attendance_ids=[att-units-001_id] and units_billed=999.0 (intentionally incorrect caller value; att-units-001 has authorized_units_consumed=4.0) plus all required fields. Assert response status equals 201.
+  Expected: HTTP 201 Created. Server ignores caller-supplied units_billed=999.0 and uses server-calculated value = 4.0 (derived from authorized_units_consumed of att-units-001). Response body units_billed = 4.0.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.9 Step 5** | REQ_4.9 | DB | Medium | Draft
+  Description: Assert response body units_billed = 4.0 (server-calculated, not the caller-supplied 999.0). Query DB: SELECT units_billed FROM claim WHERE claim_id = {returned_claim_id}. Assert units_billed = 4.0.
+  Expected: Response and DB both show units_billed = 4.0. Caller-supplied value 999.0 was ignored. Server-calculated value from authorized_units_consumed persisted.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-4.10 - POST /claims with Phase 2 Fields secondary_payer_id, mco_id, prior_authorization_number Returns 400; DB No Claim Created in Each Case | Claim
+*Preconditions: billing_specialist is authenticated in tenant-aaa-001. A confirmed attendance record att-p2-001 exists. Phase 2 fields (secondary_payer_id, mco_id, prior_authorization_number) are not part of the Phase 1 ClaimCreate schema.*
+
+**TC-4.10 Step 1** | REQ_4.10 | API | Medium | Draft
+  Description: POST /claims with all required Phase 1 fields plus secondary_payer_id="payer-999" in the request body. Assert response status equals 400.
+  Expected: HTTP 400 Bad Request. secondary_payer_id identified as a disallowed field. No claim created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.10 Step 2** | REQ_4.10 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE tenant_id='tenant-aaa-001' AND participant_id=<P1_id>. Assert count_after equals count_before captured at test start.
+  Expected: No claim created by the secondary_payer_id request. count_after equals count_before.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.10 Step 3** | REQ_4.10 | API | Medium | Draft
+  Description: POST /claims with all required fields plus mco_id="mco-001". Assert response status equals 400.
+  Expected: HTTP 400 Bad Request. mco_id is not an accepted field in Phase 1 claim schema.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.10 Step 4** | REQ_4.10 | DB | Medium | Draft
+  Description: SELECT COUNT(*) FROM claim WHERE tenant_id='tenant-aaa-001' AND participant_id=<P1_id>. Assert count_after equals count_before.
+  Expected: No claim created by the mco_id request. Count unchanged.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.10 Step 5** | REQ_4.10 | API | Medium | Draft
+  Description: POST /claims with all required fields plus prior_authorization_number="PA-12345". Assert response status equals 400.
+  Expected: HTTP 400 Bad Request. prior_authorization_number is not accepted in Phase 1.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.10 Step 6** | REQ_4.10 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE tenant_id='tenant-aaa-001' AND participant_id=<P1_id>. Assert count_after equals count_before after all three Phase 2 field requests.
+  Expected: No claims created by any of the three requests. count_after equals count_before.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-4.11 - PATCH /claims Stale Version Returns 409 CLAIM_VERSION_CONFLICT; Submitted Claim Returns 422 Before Version Check; Correct Version Returns 200 and DB Version Incremented | Claim
+*Preconditions: Claim A (C_A) exists in tenant-aaa-001 with claim_status="draft" and version=1. Claim B (C_B) exists with claim_status="submitted" and version=1. billing_specialist is authenticated.*
+
+**TC-4.11 Step 1** | REQ_4.11 | API | High | Draft
+  Description: GET /claims/<C_A_id> with billing_specialist headers. Confirm claim_status="draft" and version=1.
+  Expected: HTTP 200. claim_status="draft", version=1.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.11 Step 2** | REQ_4.11 | API | High | Draft
+  Description: PATCH /claims/<C_A_id> with body {"version":0,"rejection_reason":"stale version test"}. Assert response status equals 409.
+  Expected: HTTP 409 Conflict. error_code="CLAIM_VERSION_CONFLICT". Stale version rejected before any field changes applied.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.11 Step 3** | REQ_4.11 | DB | High | Draft
+  Description: Query DB: SELECT version, claim_status FROM claim WHERE claim_id="<C_A_id>". Assert version=1 and claim_status="draft" (unchanged).
+  Expected: version=1, claim_status="draft". No changes applied by the rejected PATCH.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.11 Step 4** | REQ_4.11 | Business Rules | High | Draft
+  Description: PATCH /claims/<C_B_id> (claim_status="submitted") with any body including correct version. Assert response status equals 422 with error_code="CLAIM_STATUS_IMMUTABLE". Confirm 422 is returned before the version check is performed.
+  Expected: HTTP 422 before version check. CLAIM_STATUS_IMMUTABLE returned for submitted claim regardless of version correctness.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.11 Step 5** | REQ_4.11 | API | High | Draft
+  Description: PATCH /claims/<C_A_id> with body {"version":1,"rejection_reason":"corrected field value"}. Assert response status equals 200.
+  Expected: HTTP 200 OK. Update accepted with correct version. Response body contains updated rejection_reason.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.11 Step 6** | REQ_4.11 | Business Rules | High | Draft
+  Description: Assert response body version = 2 (incremented from 1 to 2).
+  Expected: version = 2 in response body. Version correctly incremented on successful PATCH.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.11 Step 7** | REQ_4.11 | DB | High | Draft
+  Description: Query DB: SELECT version FROM claim WHERE claim_id="<C_A_id>". Assert version = 2.
+  Expected: DB version = 2. Persistent version increment confirmed.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+### TC-4.12 - POST /claims Cross-Tenant Attendance Reference Returns 422 or 404; DB No Cross-Tenant Claim Created | Claim
+*Preconditions: Attendance record att-tenant-bbb exists in tenant-bbb-002 with status="confirmed". billing_specialist is authenticated with X-Tenant-Id: tenant-aaa-001.*
+
+**TC-4.12 Step 1** | REQ_4.12 | API | Medium | Draft
+  Description: POST /claims with billing_specialist headers (X-Tenant-Id: tenant-aaa-001). Body: {"tenant_id":"tenant-aaa-001","participant_id":"<P1_id>","attendance_ids":["<att-tenant-bbb_id>"],"payer_type":"medicaid","procedure_code":"T2029","date_of_service_start":"fixture_date_of_service_start"}. Assert response status equals 422 or 404.
+  Expected: HTTP 422 or 404. Cross-tenant attendance not found or inaccessible from tenant-aaa-001.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.12 Step 2** | REQ_4.12 | API | Medium | Draft
+  Description: Assert response body error_code is "ATTENDANCE_NOT_FOUND" or "NOT_FOUND" indicating the cross-tenant attendance was not accessible.
+  Expected: error_code = "ATTENDANCE_NOT_FOUND" or "NOT_FOUND". Attendance from another tenant is rejected.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.12 Step 3** | REQ_4.12 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE tenant_id="tenant-aaa-001" AND date_of_service_start="fixture_date_of_service_start". Assert count = 0.
+  Expected: No claim record created in tenant-aaa-001 referencing the cross-tenant attendance.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.12 Step 4** | REQ_4.12 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE tenant_id='tenant-aaa-001' AND participant_id=<P1_id> AND date_of_service_start=fixture_date_of_service_start. Assert count=0.
+  Expected: Count=0. No claim in tenant-aaa-001 references the cross-tenant attendance.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+### TC-4.13 - POST /claims Referencing Attendance Already Linked to Existing Claim Returns 422 ATTENDANCE_NOT_CONFIRMED; DB No Duplicate Claim | Claim
+*Preconditions: Attendance record att-billed-001 exists in tenant-aaa-001 with status="billed", already linked to claim C_existing. billing_specialist is authenticated.*
+
+**TC-4.13 Step 1** | REQ_4.13 | API | Medium | Draft
+  Description: GET /attendance/<att-billed-001_id> with billing_specialist headers. Assert response status equals 200 and status="billed".
+  Expected: HTTP 200. attendance status="billed". Already associated with an existing claim.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.13 Step 2** | REQ_4.13 | API | Medium | Draft
+  Description: POST /claims with body {"tenant_id":"tenant-aaa-001","participant_id":"<P2_id>","attendance_ids":["<att-billed-001_id>"],"payer_type":"medicaid","procedure_code":"T2029","date_of_service_start":"fixture_date_of_service_start"}. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="ATTENDANCE_NOT_CONFIRMED". Billed attendance cannot be claimed again.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.13 Step 3** | REQ_4.13 | API | Medium | Draft
+  Description: Assert response body error_code = "ATTENDANCE_NOT_CONFIRMED" and message indicates att-billed-001 is not in confirmed status.
+  Expected: error_code="ATTENDANCE_NOT_CONFIRMED". Message identifies att-billed-001 as already billed.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.13 Step 4** | REQ_4.13 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM claim WHERE attendance_ids LIKE "%<att-billed-001_id>%" AND claim_id != "<C_existing_id>". Assert count = 0.
+  Expected: Count = 0. att-billed-001 is not linked to any claim other than C_existing.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+### TC-4.14 - GET /claims Non-Existent claim_id Returns 404 NOT_FOUND | Claim
+*Preconditions: billing_specialist is authenticated in tenant-aaa-001. The UUID "00000000-0000-0000-0000-999999999999" does not exist in the claim table.*
+
+**TC-4.14 Step 1** | REQ_4.14 | API | Medium | Draft
+  Description: Send GET /claims/00000000-0000-0000-0000-999999999999 with billing_specialist headers (X-User-Role: billing_specialist, X-User-Status: active, X-Tenant-Id: tenant-aaa-001).
+  Expected: HTTP 404 Not Found. Response body contains error_code="NOT_FOUND".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.14 Step 2** | REQ_4.14 | API | Medium | Draft
+  Description: Assert response status code equals 404.
+  Expected: HTTP 404 Not Found.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.14 Step 3** | REQ_4.14 | API | Medium | Draft
+  Description: Assert response body detail.error_code = "NOT_FOUND".
+  Expected: detail.error_code = "NOT_FOUND".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-4.14 Step 4** | REQ_4.14 | API | Medium | Draft
+  Description: Assert response body detail.message contains the string "00000000-0000-0000-0000-999999999999" or "Claim" to identify what resource was not found.
+  Expected: message contains the requested claim_id or the resource type "Claim" for traceability.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-4.15 - PATCH /claims Paid Claim Any Non-Status Field Returns 422 CLAIM_STATUS_IMMUTABLE; DB Claim Unchanged | Claim
+*Preconditions: Claim C_paid exists in tenant-aaa-001 with claim_status="paid" and version=3. billing_specialist is authenticated.*
+
+**TC-4.15 Step 1** | REQ_4.4 | API | High | Draft
+  Description: GET /claims/<C_paid_id> with billing_specialist headers. Confirm claim_status="paid" and capture version=3.
+  Expected: HTTP 200. claim_status="paid", version=3.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.15 Step 2** | REQ_4.4 | API | High | Draft
+  Description: PATCH /claims/<C_paid_id> with body {"version":3,"rejection_reason":"Test non-status field edit"}. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="CLAIM_STATUS_IMMUTABLE". Paid claim is fully immutable.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.15 Step 3** | REQ_4.4 | API | High | Draft
+  Description: PATCH /claims/<C_paid_id> with body {"version":3,"claim_status":"draft"}. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="CLAIM_STATUS_IMMUTABLE". Status cannot be rolled back from "paid".
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.15 Step 4** | REQ_4.4 | API | High | Draft
+  Description: PATCH /claims/<C_paid_id> with body {"version":3,"submission_date":fixture_submission_date}. Assert response status equals 422.
+  Expected: HTTP 422 Unprocessable Entity. error_code="CLAIM_STATUS_IMMUTABLE". All field changes rejected on paid claim.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+**TC-4.15 Step 5** | REQ_4.4 | DB | High | Draft
+  Description: Query DB: SELECT claim_status, version, rejection_reason FROM claim WHERE claim_id="<C_paid_id>". Assert claim_status="paid", version=3, rejection_reason is null or unchanged.
+  Expected: claim_status="paid", version=3. All fields unchanged. No modifications persisted by any of the three rejected PATCH attempts.
+  Regulatory: CMS Medicaid Billing Integrity; 42 CFR Part 455
+
+*Total steps in Claim: 82*
+
+
+## Sheet: MARRecord
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-5.1 - POST /mar-records with Same participant_id + medication_name + scheduled_time in Same Tenant Returns 409 MAR_DUPLICATE_EVENT; DB Confirms Exactly One Row with That Combination | MARRecord
+*Preconditions: nurse_medication_aide is authenticated in tenant-aaa-001 (X-User-Status: active, X-User-MFA: true). A mar_record already exists for participant P1, medication_name=fixture_medication_name (taken from mar_dup_setup fixture, no hardcoded value), scheduled_time="fixture_scheduled_time" in tenant-aaa-001.*
+
+**TC-5.1 Step 1** | REQ_5.1 | DB | High | Draft
+  Description: Verify pre-condition: SELECT COUNT(*) FROM mar_record WHERE participant_id=<P1> AND medication_name='Lisinopril 10mg' AND scheduled_time='fixture_scheduled_time' AND tenant_id='tenant-aaa-001'. Assert count = 1.
+  Expected: Count = 1. Pre-seeded mar_record confirmed present before the POST attempt.
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+**TC-5.1 Step 2** | REQ_5.1 | API | High | Draft
+  Description: Send POST /mar-records with nurse_medication_aide headers. Body: {"tenant_id":"tenant-aaa-001","participant_id":"<P1>","medication_name":"Lisinopril 10mg","scheduled_time":"fixture_scheduled_time","route":"oral","status":"scheduled"}.
+  Expected: HTTP 409 Conflict. Server detects duplicate event. Response body contains error_code="MAR_DUPLICATE_EVENT".
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+**TC-5.1 Step 3** | REQ_5.1 | API | High | Draft
+  Description: Assert response HTTP status code equals 409.
+  Expected: HTTP 409 Conflict.
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+**TC-5.1 Step 4** | REQ_5.1 | API | High | Draft
+  Description: Assert response body detail.error_code = "MAR_DUPLICATE_EVENT" and message describes the collision.
+  Expected: detail.error_code="MAR_DUPLICATE_EVENT". Message identifies duplicate combination.
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+**TC-5.1 Step 5** | REQ_5.1 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE participant_id=<P1> AND medication_name='Lisinopril 10mg' AND scheduled_time='fixture_scheduled_time' AND tenant_id='tenant-aaa-001'. Assert count = 1.
+  Expected: Count = 1. No duplicate row created. DB state unchanged.
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+### TC-5.2 - POST /mar-records by nurse_medication_aide Returns 201; DB Confirms Correct tenant_id and user_id; PHI_WRITE Audit Event Logged with All 11 Mandatory Fields | MARRecord
+*Preconditions: nurse_medication_aide (X-User-Id: user-nma-001) is authenticated in tenant-aaa-001. Participant P1 exists with no existing scheduled MAR for the target medication and time.*
+
+**TC-5.2 Step 1** | REQ_5.2 | API | High | Draft
+  Description: Send POST /mar-records with nurse_medication_aide headers (X-User-Role: nurse_medication_aide, X-User-Id: user-nma-001, X-Tenant-Id: tenant-aaa-001). Body: {"tenant_id":"tenant-aaa-001","participant_id":"<P1>","medication_name":"Metformin 500mg","scheduled_time":"fixture_scheduled_time","route":"oral","status":"scheduled"}.
+  Expected: HTTP 201 Created. Response body contains mar_id.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.2 Step 2** | REQ_5.2 | API | High | Draft
+  Description: Assert response HTTP status code equals 201.
+  Expected: HTTP 201 Created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.2 Step 3** | REQ_5.2 | DB | High | Draft
+  Description: Query DB: SELECT tenant_id, created_by FROM mar_record WHERE mar_id=<returned_mar_id>.
+  Expected: tenant_id='tenant-aaa-001'. created_by='user-nma-001'.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.2 Step 4** | REQ_5.2 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE tenant_id='tenant-aaa-001' AND created_by='user-nma-001'. Assert count >= 1.
+  Expected: Count >= 1. Row persisted with correct tenant and user identifiers.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.3 - POST /mar-records by billing_specialist Returns 403 RBAC_DENIED; DB Confirms No Row Created | MARRecord
+*Preconditions: care_coordinator and billing_specialist are authenticated in tenant-aaa-001. Participant P1 exists. Initial MAR count for tenant-aaa-001 captured as N.*
+
+**TC-5.3 Step 1** | REQ_5.3 | API | High | Draft
+  Description: Send POST /mar-records with X-User-Role: care_coordinator headers. Body: valid MAR payload for tenant-aaa-001.
+  Expected: HTTP 403 Forbidden. error_code="RBAC_DENIED". care_coordinator is not permitted to create MAR records.
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+**TC-5.3 Step 2** | REQ_5.3 | API | High | Draft
+  Description: Send POST /mar-records with X-User-Role: billing_specialist headers. Body: same valid payload.
+  Expected: HTTP 403 Forbidden. error_code="RBAC_DENIED". billing_specialist is not permitted to create MAR records.
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+**TC-5.3 Step 3** | REQ_5.3 | API | High | Draft
+  Description: Assert both responses have status 403 and detail.error_code="MAR_RBAC_DENIED".
+  Expected: Both responses: HTTP 403, error_code="RBAC_DENIED".
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+**TC-5.3 Step 4** | REQ_5.3 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE tenant_id='tenant-aaa-001'. Assert count = N.
+  Expected: Count = N. No new MAR records created by either unauthorized attempt.
+  Regulatory: HIPAA §164.308(a)(3); CMS Medicaid/Medicare
+
+### TC-5.4 - GET Controlled-Substance MARRecord from Unauthorized Role Returns 403 with No Record Content; DB Confirms ACCESS_DENIED Audit Event with All 11 Mandatory Fields Non-Null and No PHI in data_affected | MARRecord
+*Preconditions: A mar_record with is_controlled_substance=true exists in tenant-aaa-001 (mar_id known). billing_specialist (X-User-Id: user-bs-001, X-Session-Id: sess-tc54) authenticated in tenant-aaa-001.*
+
+**TC-5.4 Step 1** | REQ_5.4 | DB | High | Draft
+  Description: Query DB: SELECT mar_id, is_controlled_substance FROM mar_record WHERE mar_id=<mar_id>. Confirm is_controlled_substance=true.
+  Expected: Row exists with is_controlled_substance=true.
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+**TC-5.4 Step 2** | REQ_5.4 | API | High | Draft
+  Description: Send GET /mar-records/<mar_id> with billing_specialist headers.
+  Expected: HTTP 403 Forbidden. Response body contains no record content: no medication_name, no administered_time, no participant_id.
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+**TC-5.4 Step 3** | REQ_5.4 | API | High | Draft
+  Description: Assert response status 403. Assert response body contains no PHI fields.
+  Expected: HTTP 403. No medication_name, administered_time, or participant_id in response.
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+**TC-5.4 Step 4** | REQ_5.4 | DB | High | Draft
+  Description: Query DB: SELECT * FROM audit_log WHERE resource_id=<mar_id> AND action_type='ACCESS_DENIED'. Assert at least one row exists.
+  Expected: ACCESS_DENIED audit event row found for this resource.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-5.4 Step 5** | REQ_5.4 | DB | High | Draft
+  Description: Assert all 11 mandatory fields non-null on the ACCESS_DENIED event row: audit_id, timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: All 11 mandatory audit fields non-null. outcome='DENIED'. layer='APP_SERVICE'. No raw PHI in data_affected.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-5.4 Step 6** | REQ_5.4 | DB | High | Draft
+  Description: Assert data_affected column contains no raw PHI values: no medication_name literal, no participant_id value, no administered_time.
+  Expected: data_affected contains no raw PHI. Field names only or empty set.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+### TC-5.5 - POST /mar-records with status=administered and null administered_time Returns 422 MAR_MISSING_ADMINISTERED_TIME; DB Confirms No Row Created | MARRecord
+*Preconditions: nurse_medication_aide authenticated in tenant-aaa-001. Initial MAR count for tenant-aaa-001 captured as N.*
+
+**TC-5.5 Step 1** | REQ_5.5 | API | High | Draft
+  Description: Send POST /mar-records with status=administered and administered_time=null. All other fields valid.
+  Expected: HTTP 422 Unprocessable Entity. administered_time is required when status=administered.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.5 Step 2** | REQ_5.5 | API | High | Draft
+  Description: Assert response HTTP status code equals 422.
+  Expected: HTTP 422.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.5 Step 3** | REQ_5.5 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE tenant_id='tenant-aaa-001'. Assert count = N (unchanged).
+  Expected: Count = N. No administered MAR row created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.6 - GET Controlled-Substance MARRecord by Privileged Role Returns 200; PHI_READ Audit Event Logged with All 11 Mandatory Fields Non-Null and No PHI in data_affected | MARRecord
+*Preconditions: nurse_medication_aide (X-User-Id: user-nma-001, X-Session-Id: sess-tc55) authenticated in tenant-aaa-001. Participant P1 exists with no existing controlled-substance MAR record for the target time.*
+
+**TC-5.6 Step 1** | REQ_5.6 | API | High | Draft
+  Description: Send POST /mar-records with is_controlled_substance=true. Body: {"tenant_id":"tenant-aaa-001","participant_id":"<P1>","medication_name":"Oxycodone 5mg","scheduled_time":"fixture_scheduled_time","route":"oral","status":"scheduled","is_controlled_substance":true}.
+  Expected: HTTP 201 Created. mar_id returned.
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+**TC-5.6 Step 2** | REQ_5.6 | DB | High | Draft
+  Description: Query DB: SELECT * FROM audit_log WHERE resource_id=<mar_id> AND action_type='PHI_WRITE'. Assert exactly one row exists. No time.sleep() before this query.
+  Expected: Exactly one PHI_WRITE audit event row found.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-5.6 Step 3** | REQ_5.6 | DB | High | Draft
+  Description: Assert all 11 mandatory fields non-null on the PHI_WRITE event row: audit_id, timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: All 11 mandatory audit fields non-null. outcome='SUCCESS'. layer='APP_SERVICE'. No raw PHI in data_affected.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-5.6 Step 4** | REQ_5.6 | DB | High | Draft
+  Description: Assert data_affected contains no raw PHI values: no medication_name literal, no participant_id value, no administered_time.
+  Expected: data_affected contains no raw PHI values.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+### TC-5.7 - POST /mar-records with status=refused and null notes Returns 422 MAR_MISSING_NOTES; DB Confirms No Row Created | MARRecord
+*Preconditions: nurse_medication_aide authenticated in tenant-aaa-001. Initial refused MAR count captured as N.*
+
+**TC-5.7 Step 1** | REQ_5.7 | API | High | Draft
+  Description: Send POST /mar-records with status=refused and notes=null. All other fields valid.
+  Expected: HTTP 422 Unprocessable Entity. notes is required when status=refused.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.7 Step 2** | REQ_5.7 | API | High | Draft
+  Description: Assert response HTTP status code equals 422.
+  Expected: HTTP 422.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.7 Step 3** | REQ_5.7 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE tenant_id='tenant-aaa-001' AND status='refused'. Assert count = N (unchanged).
+  Expected: Count = N. No refused MAR row created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.8 - POST /mar-records with status=held and null notes Returns 422 MAR_MISSING_NOTES; DB Confirms No Row Created | MARRecord
+*Preconditions: nurse_medication_aide authenticated in tenant-aaa-001. Initial held MAR count captured as N.*
+
+**TC-5.8 Step 1** | REQ_5.8 | API | High | Draft
+  Description: Send POST /mar-records with status=held and notes=null. All other fields valid.
+  Expected: HTTP 422 Unprocessable Entity. notes is required when status=held.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.8 Step 2** | REQ_5.8 | API | High | Draft
+  Description: Assert response HTTP status code equals 422.
+  Expected: HTTP 422.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.8 Step 3** | REQ_5.8 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE tenant_id='tenant-aaa-001' AND status='held'. Assert count = N (unchanged).
+  Expected: Count = N. No held MAR row created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.9 - POST /mar-records with Future administered_time Returns 422 ADMIN_TIME_FUTURE; DB Confirms No Row Created | MARRecord
+*Preconditions: nurse_medication_aide authenticated in tenant-aaa-001. All timestamps are fixture-computed at runtime. No hardcoded values. Initial MAR count captured as N.*
+
+**TC-5.9 Step 1** | REQ_5.9 | API | High | Draft
+  Description: Send POST /mar-records with administered_time set to a future timestamp (fixture_administered_time_future = datetime.now(UTC) + timedelta(hours=1)) and status=administered.
+  Expected: HTTP 422 Unprocessable Entity. error_code="ADMIN_TIME_FUTURE".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.9 Step 2** | REQ_5.9 | API | High | Draft
+  Description: Assert response HTTP status code equals 422.
+  Expected: HTTP 422.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.9 Step 3** | REQ_5.9 | API | High | Draft
+  Description: Assert detail.error_code = "ADMIN_TIME_FUTURE".
+  Expected: detail.error_code="ADMIN_TIME_FUTURE".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.9 Step 4** | REQ_5.9 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE tenant_id='tenant-aaa-001'. Assert count = N (unchanged).
+  Expected: Count = N. No row created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.10 - POST /mar-records with administered_time More Than 2 Hours Before scheduled_time Returns 422 ADMIN_TIME_TOO_EARLY; DB Confirms No Row Created | MARRecord
+*Preconditions: nurse_medication_aide authenticated in tenant-aaa-001. scheduled_time="fixture_scheduled_time". 2h window boundary: fixture_scheduled_time minus timedelta(hours=2). Initial MAR count captured as N.*
+
+**TC-5.10 Step 1** | REQ_5.10 | API | High | Draft
+  Description: Send POST /mar-records with administered_time=fixture_administered_time_too_early (3 hours before scheduled_time, outside 2h window) and status=administered.
+  Expected: HTTP 422 Unprocessable Entity. error_code="ADMIN_TIME_TOO_EARLY".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.10 Step 2** | REQ_5.10 | API | High | Draft
+  Description: Assert response HTTP status code equals 422.
+  Expected: HTTP 422.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.10 Step 3** | REQ_5.10 | API | High | Draft
+  Description: Assert detail.error_code = "ADMIN_TIME_TOO_EARLY".
+  Expected: detail.error_code="ADMIN_TIME_TOO_EARLY".
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.10 Step 4** | REQ_5.10 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE tenant_id='tenant-aaa-001'. Assert count = N (unchanged).
+  Expected: Count = N. No row created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.11 - POST /mar-records with administered_by Referencing Non-Nurse Role User Returns 403; DB Confirms No Row Created | MARRecord
+*Preconditions: nurse_medication_aide authenticated in tenant-aaa-001. Participant P1 exists. A user with role program_administrator (admin_user_id from users fixture) exists in the same tenant. Initial MAR count for P1 captured as N.*
+
+**TC-5.11 Step 1** | REQ_5.11 | API | Medium | Draft
+  Description: Send POST /mar-records with all valid fields except administered_by set to admin_user_id (program_administrator, not nurse_medication_aide). administered_time within valid 2h window.
+  Expected: HTTP 403 Forbidden. administered_by must reference a nurse_medication_aide.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.11 Step 2** | REQ_5.11 | API | Medium | Draft
+  Description: Assert response status equals 403.
+  Expected: HTTP 403 Forbidden.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.11 Step 3** | REQ_5.11 | API | Medium | Draft
+  Description: Assert detail.message contains 'nurse_medication_aide' or 'role'. Assert detail.error_code is present.
+  Expected: detail.message references nurse_medication_aide role requirement. error_code present.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.12 - POST /mar-records with administered_by Referencing Non-Existent user_id Returns 403 or 422; DB Confirms No Row Created | MARRecord
+*Preconditions: nurse_medication_aide authenticated in tenant-aaa-001. Participant P1 exists. A UUID not present in the user table prepared as nonexistent_user_id. Initial MAR count for P1 captured as N.*
+
+**TC-5.12 Step 1** | REQ_5.12 | API | High | Draft
+  Description: Send POST /mar-records with all valid fields except administered_by set to nonexistent_user_id. administered_time within valid 2h window.
+  Expected: HTTP 403 or 422. Non-existent administered_by user rejected.
+  Regulatory: HIPAA §164.312(a)(2)(iv); 42 CFR Part 2; CMS Medicaid/Medicare
+
+**TC-5.12 Step 2** | REQ_5.12 | API | High | Draft
+  Description: Assert response status equals 403 or 422.
+  Expected: HTTP 403 or 422.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-5.12 Step 3** | REQ_5.12 | DB | High | Draft
+  Description: Assert detail.message contains nonexistent_user_id or the string 'not found'.
+  Expected: detail.message identifies the invalid administered_by user_id.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-5.12 Step 4** | REQ_5.12 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE participant_id=<P1_id>. Assert count=N (unchanged).
+  Expected: Count=N. No MAR record created after rejected administered_by validation.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+### TC-5.13 - POST /mar-records by care_coordinator Returns 403 RBAC_DENIED; DB Confirms No Row Created | MARRecord
+*Preconditions: care_coordinator authenticated in tenant-aaa-001. Participant P1 exists. Initial MAR count for P1 captured as N. WRITE_ROLES[mar_record]={nurse_medication_aide} only.*
+
+**TC-5.13 Step 1** | REQ_5.13 | API | Medium | Draft
+  Description: Send POST /mar-records with X-User-Role: care_coordinator headers. Body: valid MAR payload with status=administered and all required fields.
+  Expected: HTTP 403 Forbidden. error_code=RBAC_DENIED.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.13 Step 2** | REQ_5.13 | API | Medium | Draft
+  Description: Assert response status equals 403 and detail.error_code=RBAC_DENIED.
+  Expected: HTTP 403. error_code=RBAC_DENIED confirmed.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.13 Step 3** | REQ_5.13 | API | Medium | Draft
+  Description: Assert response status equals 403 and error_code=RBAC_DENIED.
+  Expected: HTTP 403. error_code=RBAC_DENIED.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.13 Step 4** | REQ_5.13 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE participant_id=<P1_id>. Assert count=N (unchanged).
+  Expected: Count=N. No MAR created after 403 rejection by care_coordinator.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.14 - PATCH on MARRecord with status=administered Returns 422 MAR_ADMINISTERED_IMMUTABLE for Any Field Change; DB Confirms version Unchanged | MARRecord
+*Preconditions: A mar_record with status=administered, version=1, notes=null exists in tenant-aaa-001. nurse_medication_aide authenticated.*
+
+**TC-5.14 Step 1** | REQ_5.14 | DB | High | Draft
+  Description: Query DB: SELECT status, version, notes FROM mar_record WHERE mar_id=<mar_id>. Confirm status='administered', version=1.
+  Expected: status='administered', version=1, notes=null confirmed.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.14 Step 2** | REQ_5.14 | API | High | Draft
+  Description: Send PATCH /mar-records/<mar_id> with {"notes": "post-admin update"} and nurse_medication_aide headers.
+  Expected: HTTP 422 Unprocessable Entity. Administered records are immutable.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.14 Step 3** | REQ_5.14 | API | High | Draft
+  Description: Assert response HTTP status code equals 422.
+  Expected: HTTP 422.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.14 Step 4** | REQ_5.14 | DB | High | Draft
+  Description: Query DB: SELECT status, version, notes FROM mar_record WHERE mar_id=<mar_id>. Assert all fields identical to pre-PATCH state.
+  Expected: status='administered', version=1, notes=null. All fields unchanged.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.15 - PATCH Administered MAR Immutability Check Fires Before Version Check; 422 MAR_ADMINISTERED_IMMUTABLE Even with Stale version | MARRecord
+*Preconditions: A mar_record with status=administered and version=original_version exists (mar_id from fresh_mar_record fixture). nurse_medication_aide authenticated. stale_version=original_version-1.*
+
+**TC-5.15 Step 1** | REQ_5.15 | DB | Medium | Draft
+  Description: Query DB: SELECT status, version FROM mar_record WHERE mar_id=<mar_id>. Confirm status='administered' and version=original_version.
+  Expected: status='administered', version=original_version confirmed.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.15 Step 2** | REQ_5.15 | API | Medium | Draft
+  Description: Send PATCH /mar-records/<mar_id> with {version: stale_version, notes: 'Stale version on administered MAR'} and nurse_medication_aide headers.
+  Expected: HTTP 422. Administered immutability check fires before version check. error_code=MAR_ADMINISTERED_IMMUTABLE, not 409.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.15 Step 3** | REQ_5.15 | API | Medium | Draft
+  Description: Assert response status equals 422 (not 409). Assert detail.error_code=MAR_ADMINISTERED_IMMUTABLE.
+  Expected: HTTP 422. error_code=MAR_ADMINISTERED_IMMUTABLE. Immutability check precedes version check.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.16 - PATCH /mar-records notes on Missed MAR Returns 200; DB Confirms notes Updated and version Incremented | MARRecord
+*Preconditions: A mar_record with status=missed and version=original_version exists (mar_id from fresh_missed_mar fixture). nurse_medication_aide authenticated.*
+
+**TC-5.16 Step 1** | REQ_5.16 | API | High | Draft
+  Description: Send PATCH /mar-records/<mar_id> with {version: original_version, notes: 'Dose missed — patient in procedure room during scheduled time.'} and nurse_medication_aide headers.
+  Expected: HTTP 200 OK. Response body: notes updated, version=original_version+1, status='missed'.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.16 Step 2** | REQ_5.16 | API | High | Draft
+  Description: Assert response status equals 200. Assert notes equals updated value. Assert version equals original_version+1.
+  Expected: HTTP 200. notes updated. version incremented by 1. status='missed' unchanged.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.16 Step 3** | REQ_5.16 | DB | High | Draft
+  Description: Query DB: SELECT notes, version, status FROM mar_record WHERE mar_id=<mar_id>. Assert notes=updated value, version=original_version+1, status='missed'.
+  Expected: DB: notes updated, version=original_version+1, status='missed'. All three fields persisted correctly.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.17 - Correction POST Without original_mar_id Returns 422 MAR_CORRECTION_MISSING_ORIGINAL; DB Confirms No Correction Row Created | MARRecord
+*Preconditions: nurse_medication_aide authenticated in tenant-aaa-001. Initial correction count in tenant = 0.*
+
+**TC-5.17 Step 1** | REQ_5.17 | API | Medium | Draft
+  Description: Send POST /mar-records with is_correction=true but no original_mar_id field. notes="Correction: missing original reference" (>= 20 chars). All other required fields valid.
+  Expected: HTTP 422 Unprocessable Entity. original_mar_id is required for correction records.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.17 Step 2** | REQ_5.17 | API | Medium | Draft
+  Description: Assert response HTTP status code equals 422.
+  Expected: HTTP 422.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.17 Step 3** | REQ_5.17 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE is_correction=true AND tenant_id='tenant-aaa-001'. Assert count = 0.
+  Expected: Count = 0. No correction row created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.18 - Correction POST Without 20-Character notes Returns 422 MAR_CORRECTION_NOTES_TOO_SHORT; DB Confirms No Correction Row Created | MARRecord
+*Preconditions: A mar_record exists in tenant-aaa-001 (original_id known). nurse_medication_aide authenticated. Initial correction count for original_id = 0.*
+
+**TC-5.18 Step 1** | REQ_5.18 | API | Medium | Draft
+  Description: Send POST /mar-records with is_correction=true, original_mar_id=<original_id>, notes="Short" (fewer than 20 characters).
+  Expected: HTTP 422 Unprocessable Entity. notes too short for a correction record.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.18 Step 2** | REQ_5.18 | API | Medium | Draft
+  Description: Assert response HTTP status code equals 422.
+  Expected: HTTP 422.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.18 Step 3** | REQ_5.18 | DB | Medium | Draft
+  Description: Query DB: SELECT COUNT(*) FROM mar_record WHERE is_correction=true AND original_mar_id=<original_id>. Assert count = 0.
+  Expected: Count = 0. No correction row created.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.19 - Correction POST with Valid original_mar_id and 20-Char notes Returns 201; DB Confirms is_correction=True and original_mar_id Set | MARRecord
+*Preconditions: A mar_record (original_id known, status=scheduled, version=1) exists in tenant-aaa-001. nurse_medication_aide authenticated.*
+
+**TC-5.19 Step 1** | REQ_5.19 | DB | High | Draft
+  Description: Query DB: SELECT mar_id, status, notes, version FROM mar_record WHERE mar_id=<original_id>. Capture all field values.
+  Expected: Original row confirmed: status='scheduled', version=1.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.19 Step 2** | REQ_5.19 | API | High | Draft
+  Description: Send POST /mar-records with is_correction=true, original_mar_id=<original_id>, notes="Correction: dose adjusted per updated prescription" (>= 20 chars). All other required fields valid.
+  Expected: HTTP 201 Created. New mar_id returned (distinct from original_id).
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.19 Step 3** | REQ_5.19 | DB | High | Draft
+  Description: Query DB: SELECT is_correction, original_mar_id FROM mar_record WHERE mar_id=<new_mar_id>.
+  Expected: is_correction=true. original_mar_id=<original_id>. Correction row correctly linked.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+**TC-5.19 Step 4** | REQ_5.19 | DB | High | Draft
+  Description: Query DB: SELECT status, notes, version FROM mar_record WHERE mar_id=<original_id>. Assert all values identical to those captured in Step 1.
+  Expected: All fields of original row unchanged. status, notes, version match captured values exactly.
+  Regulatory: CMS Medicaid/Medicare; State Adult Day Care Licensing
+
+### TC-5.20 - PATCH /mar-records/<id> status Transition on Missed MAR Returns 200; DB Confirms status Changed and version Incremented | MARRecord
+*Preconditions: A mar_record with status=scheduled, version=1 exists in tenant-aaa-001 (mar_id known). nurse_medication_aide authenticated.*
+
+**TC-5.20 Step 1** | REQ_5.20 | DB | Medium | Draft
+  Description: Query DB: SELECT version, status FROM mar_record WHERE mar_id=<mar_id>. Confirm version=1, status='scheduled'.
+  Expected: version=1, status='scheduled' confirmed.
+  Regulatory: HIPAA §164.308(a)(8); CMS Medicaid/Medicare
+
+**TC-5.20 Step 2** | REQ_5.20 | API | Medium | Draft
+  Description: Send PATCH /mar-records/<mar_id> with {"notes": "Nurse confirmed patient ready", "version": 1} and nurse_medication_aide headers.
+  Expected: HTTP 200 OK.
+  Regulatory: HIPAA §164.308(a)(8); CMS Medicaid/Medicare
+
+**TC-5.20 Step 3** | REQ_5.20 | API | Medium | Draft
+  Description: Assert response HTTP status code equals 200.
+  Expected: HTTP 200.
+  Regulatory: HIPAA §164.308(a)(8); CMS Medicaid/Medicare
+
+**TC-5.20 Step 4** | REQ_5.20 | DB | Medium | Draft
+  Description: Query DB: SELECT version FROM mar_record WHERE mar_id=<mar_id>. Assert version = 2.
+  Expected: version=2. Version incremented by server after successful PATCH.
+  Regulatory: HIPAA §164.308(a)(8); CMS Medicaid/Medicare
+
+### TC-5.21 - PATCH with Stale version Returns 409 MAR_VERSION_CONFLICT; DB version Unchanged | MARRecord
+*Preconditions: Two mar_records in tenant-aaa-001: mar_a (status=scheduled, version=2), mar_b (status=administered, version=1). nurse_medication_aide authenticated.*
+
+**TC-5.21 Step 1** | REQ_5.21 | API | High | Draft
+  Description: Send PATCH /mar-records/<mar_a_id> with {"version": 1} (stale; current version is 2).
+  Expected: HTTP 409 Conflict. error_code="MAR_VERSION_CONFLICT".
+  Regulatory: HIPAA §164.308(a)(8); CMS Medicaid/Medicare
+
+**TC-5.21 Step 2** | REQ_5.21 | API | High | Draft
+  Description: Assert response status 409 and detail.error_code="MAR_VERSION_CONFLICT".
+  Expected: HTTP 409, error_code="MAR_VERSION_CONFLICT".
+  Regulatory: HIPAA §164.308(a)(8); CMS Medicaid/Medicare
+
+**TC-5.21 Step 3** | REQ_5.21 | DB | High | Draft
+  Description: Query DB: SELECT version FROM mar_record WHERE mar_id=<mar_a_id>. Assert version = 2.
+  Expected: version=2. No change. Optimistic lock prevented the update.
+  Regulatory: HIPAA §164.308(a)(8); CMS Medicaid/Medicare
+
+**TC-5.21 Step 4** | REQ_5.21 | API | High | Draft
+  Description: Send PATCH /mar-records/<mar_b_id> with {"notes": "update", "version": 1} (stale, but immutability check must fire first). mar_b has status=administered.
+  Expected: HTTP 422 Unprocessable Entity. Immutability check on administered status fires before version check. Not 409.
+  Regulatory: HIPAA §164.308(a)(8); CMS Medicaid/Medicare
+
+**TC-5.21 Step 5** | REQ_5.21 | DB | High | Draft
+  Description: Query DB: SELECT version FROM mar_record WHERE mar_id=<mar_b_id>. Assert version = 1.
+  Expected: version=1. Unchanged. Neither the PATCH nor version increment applied.
+  Regulatory: HIPAA §164.308(a)(8); CMS Medicaid/Medicare
+
+*Total steps in MARRecord: 80*
+
+
+## Sheet: Incident
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-6.1 - Two POSTs for Same participant_id + date + incident_type Both Return 201 with Distinct incident_ids; DB Confirms Two Rows | Incident
+*Preconditions: program_administrator authenticated in tenant-aaa-001. Participant P1 exists. No incident exists for P1 on fixture_incident_date with type=fall.*
+
+**TC-6.1 Step 1** | REQ_6.1 | API | High | Draft
+  Description: Send POST /incidents with participant_id=<P1>, incident_date="fixture_incident_date", incident_type="fall", severity="minor", description="Patient tripped on entrance mat."
+  Expected: HTTP 201 Created. incident_id_1 returned.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.1 Step 2** | REQ_6.1 | API | High | Draft
+  Description: Send POST /incidents again with identical participant_id, incident_date, and incident_type.
+  Expected: HTTP 201 Created. incident_id_2 returned (distinct from incident_id_1). Incidents are not deduplicated.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.1 Step 3** | REQ_6.1 | Business Rules | High | Draft
+  Description: Assert incident_id_1 != incident_id_2.
+  Expected: Two distinct incident IDs. Duplicate events are allowed for incidents.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.1 Step 4** | REQ_6.1 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM incident WHERE participant_id=<P1> AND incident_date='fixture_incident_date' AND incident_type='fall' AND tenant_id='tenant-aaa-001'. Assert count = 2.
+  Expected: Count = 2. Both rows persisted in DB.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+### TC-6.2 - POST /incidents from program_administrator Returns 201; POST from care_coordinator Returns 201; DB Confirms Rows Created | Incident
+*Preconditions: program_administrator (X-User-Id: user-pa-001) and care_coordinator (X-User-Id: user-cc-001) authenticated in tenant-aaa-001. Participants P1 and P2 exist.*
+
+**TC-6.2 Step 1** | REQ_6.2 | API | High | Draft
+  Description: Send POST /incidents with program_administrator headers. Body: valid incident for participant P1.
+  Expected: HTTP 201 Created.
+  Regulatory: HIPAA §164.308(a)(3); 42 CFR Part 455
+
+**TC-6.2 Step 2** | REQ_6.2 | API | High | Draft
+  Description: Send POST /incidents with care_coordinator headers. Body: valid incident for participant P2.
+  Expected: HTTP 201 Created.
+  Regulatory: HIPAA §164.308(a)(3); 42 CFR Part 455
+
+**TC-6.2 Step 3** | REQ_6.2 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM incident WHERE tenant_id='tenant-aaa-001' AND created_by IN ('user-pa-001','user-cc-001'). Assert count >= 2.
+  Expected: Count >= 2. Both rows persisted with correct created_by identifiers.
+  Regulatory: HIPAA §164.308(a)(3); 42 CFR Part 455
+
+### TC-6.3 - GET /incidents from physician Returns 403; GET from participant_family Returns 403; DB Confirms No Data Exposed | Incident
+*Preconditions: An incident exists in tenant-aaa-001 (incident_id known). physician and participant_family authenticated in tenant-aaa-001.*
+
+**TC-6.3 Step 1** | REQ_6.3 | API | High | Draft
+  Description: Send GET /incidents/<incident_id> with X-User-Role: physician headers.
+  Expected: HTTP 403 Forbidden. Response body contains no incident data.
+  Regulatory: HIPAA §164.308(a)(3); 42 CFR Part 455
+
+**TC-6.3 Step 2** | REQ_6.3 | API | High | Draft
+  Description: Send GET /incidents/<incident_id> with X-User-Role: participant_family headers.
+  Expected: HTTP 403 Forbidden. Response body contains no incident data.
+  Regulatory: HIPAA §164.308(a)(3); 42 CFR Part 455
+
+**TC-6.3 Step 3** | REQ_6.3 | API | High | Draft
+  Description: Assert both responses status = 403 and response bodies contain no PHI fields.
+  Expected: Both: HTTP 403. No description, participant_id, or incident_type in either response body.
+  Regulatory: HIPAA §164.308(a)(3); 42 CFR Part 455
+
+**TC-6.3 Step 4** | REQ_6.3 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM incident WHERE incident_id=<incident_id>. Assert count = 1.
+  Expected: Count = 1. Incident row intact; not exposed to unauthorized callers.
+  Regulatory: HIPAA §164.308(a)(3); 42 CFR Part 455
+
+### TC-6.4 - GET is_sud_related=true Incident from compliance_officer Returns 200; DB Confirms Row Exists | Incident
+*Preconditions: compliance_officer authenticated in tenant-aaa-001. An incident with is_sud_related=true exists (incident_id known).*
+
+**TC-6.4 Step 1** | REQ_6.4 | DB | High | Draft
+  Description: Query DB: SELECT is_sud_related FROM incident WHERE incident_id=<incident_id>. Confirm is_sud_related=true.
+  Expected: is_sud_related=true row confirmed in DB.
+  Regulatory: 42 CFR Part 2; HIPAA §164.308(a)(3)
+
+**TC-6.4 Step 2** | REQ_6.4 | API | High | Draft
+  Description: Send GET /incidents/<incident_id> with compliance_officer headers.
+  Expected: HTTP 200 OK. Response includes incident data including is_sud_related field.
+  Regulatory: 42 CFR Part 2; HIPAA §164.308(a)(3)
+
+**TC-6.4 Step 3** | REQ_6.4 | API | High | Draft
+  Description: Assert response HTTP status code equals 200.
+  Expected: HTTP 200 OK.
+  Regulatory: 42 CFR Part 2; HIPAA §164.308(a)(3)
+
+### TC-6.5 - GET is_sud_related=true Incident from billing_specialist Returns 403 with No Record Content; DB Confirms ACCESS_DENIED Audit Event with All 11 Mandatory Fields Non-Null and No PHI | Incident
+*Preconditions: billing_specialist (X-User-Id: user-bs-001, X-Session-Id: sess-tc65) authenticated in tenant-aaa-001. An incident with is_sud_related=true exists (incident_id known).*
+
+**TC-6.5 Step 1** | REQ_6.5 | API | High | Draft
+  Description: Send GET /incidents/<incident_id> with billing_specialist headers.
+  Expected: HTTP 403 Forbidden. Response body contains no record content.
+  Regulatory: 42 CFR Part 2; HIPAA §164.308(a)(3)
+
+**TC-6.5 Step 2** | REQ_6.5 | API | High | Draft
+  Description: Assert response status 403 and no PHI fields in response body.
+  Expected: HTTP 403. No participant_id, description, or is_sud_related value in response.
+  Regulatory: 42 CFR Part 2; HIPAA §164.308(a)(3)
+
+**TC-6.5 Step 3** | REQ_6.5 | DB | High | Draft
+  Description: Query DB: SELECT * FROM audit_log WHERE resource_id=<incident_id> AND action_type='ACCESS_DENIED'. Assert row exists.
+  Expected: ACCESS_DENIED audit event row found.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-6.5 Step 4** | REQ_6.5 | DB | High | Draft
+  Description: Assert all 11 mandatory fields non-null on the ACCESS_DENIED row: audit_id, timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: All 11 mandatory audit fields non-null. outcome='DENIED'.
+layer='APP_SERVICE'. No raw PHI in data_affected.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-6.5 Step 5** | REQ_6.5 | DB | High | Draft
+  Description: Assert data_affected contains no raw PHI values: no participant_id, incident description, or SUD-related indicator.
+  Expected: data_affected contains no raw PHI.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+### TC-6.6 - Write to is_sud_related=true Incident Produces PHI_WRITE Audit Event; DB Confirms 11 Mandatory Fields Non-Null and No PHI in data_affected; No time.sleep(); DB Query Only | Incident
+*Preconditions: compliance_officer (X-User-Id: user-co-001, X-Session-Id: sess-tc66) authenticated in tenant-aaa-001. Participant P1 exists.*
+
+**TC-6.6 Step 1** | REQ_6.6 | API | High | Draft
+  Description: Send POST /incidents with is_sud_related=true and all required fields. Body: valid incident for participant P1.
+  Expected: HTTP 201 Created. incident_id returned.
+  Regulatory: 42 CFR Part 2; HIPAA §164.308(a)(3)
+
+**TC-6.6 Step 2** | REQ_6.6 | DB | High | Draft
+  Description: Query DB: SELECT * FROM audit_log WHERE resource_id=<incident_id> AND action_type='PHI_WRITE'. Assert row exists. No time.sleep() before query.
+  Expected: PHI_WRITE audit event row found.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-6.6 Step 3** | REQ_6.6 | DB | High | Draft
+  Description: Assert all 11 mandatory fields non-null on the PHI_WRITE row: audit_id, timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: All 11 mandatory audit fields non-null. outcome='SUCCESS'. layer='APP_SERVICE'. No raw PHI in data_affected.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-6.6 Step 4** | REQ_6.6 | DB | High | Draft
+  Description: Assert data_affected contains no raw PHI values: no participant_id, description, or is_sud_related indicator.
+  Expected: data_affected contains no raw PHI.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+### TC-6.7 - Unauthorized Attempt on is_sud_related=true Incident Produces ACCESS_DENIED Audit Event; DB Confirms 11 Mandatory Fields Non-Null; No time.sleep(); DB Query Only | Incident
+*Preconditions: A is_sud_related=true incident exists in tenant-aaa-001 (incident_id known). physician (X-User-Id: user-ph-001, X-Session-Id: sess-tc67) authenticated.*
+
+**TC-6.7 Step 1** | REQ_6.7 | API | High | Draft
+  Description: Send GET /incidents/<incident_id> with physician headers.
+  Expected: HTTP 403 Forbidden.
+  Regulatory: 42 CFR Part 2; HIPAA §164.308(a)(3)
+
+**TC-6.7 Step 2** | REQ_6.7 | DB | High | Draft
+  Description: Query DB: SELECT * FROM audit_log WHERE resource_id=<incident_id> AND action_type='ACCESS_DENIED'. Assert row exists. No time.sleep() before query.
+  Expected: ACCESS_DENIED audit event row found.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-6.7 Step 3** | REQ_6.7 | DB | High | Draft
+  Description: Assert all 11 mandatory fields non-null: audit_id, timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: All 11 mandatory audit fields non-null. outcome='DENIED'. layer='APP_SERVICE'.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+### TC-6.8 - POST /incidents with severity=severe Returns 201 with status=escalated; DB Confirms status=escalated | Incident
+*Preconditions: program_administrator authenticated in tenant-aaa-001. Participant P1 exists.*
+
+**TC-6.8 Step 1** | REQ_6.8 | API | High | Draft
+  Description: Send POST /incidents with severity="severe". Body: {"tenant_id":"tenant-aaa-001","participant_id":"<P1>","incident_date":"fixture_incident_date","incident_type":"fall","severity":"severe","description":"Patient fell from wheelchair."}.
+  Expected: HTTP 201 Created. Response body contains status="escalated".
+  Regulatory: 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.8 Step 2** | REQ_6.8 | API | High | Draft
+  Description: Assert response status 201 and response body field status="escalated".
+  Expected: HTTP 201. status="escalated" in response.
+  Regulatory: 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.8 Step 3** | REQ_6.8 | DB | High | Draft
+  Description: Query DB: SELECT status FROM incident WHERE incident_id=<returned_id>.
+  Expected: status='escalated'. Server auto-escalated based on severity=severe.
+  Regulatory: 42 CFR Part 455; State Adult Day Care Licensing
+
+### TC-6.9 - PATCH close on Escalated Incident Without regulatory_submission_date Returns 422 INCIDENT_MISSING_REGULATORY_SUBMISSION; DB Status Unchanged | Incident
+*Preconditions: An escalated incident (status='escalated', regulatory_submission_date=null, incident_id known) exists in tenant-aaa-001. program_administrator authenticated.*
+
+**TC-6.9 Step 1** | REQ_6.9 | DB | High | Draft
+  Description: Query DB: SELECT status, regulatory_submission_date FROM incident WHERE incident_id=<id>. Confirm status='escalated', regulatory_submission_date IS NULL.
+  Expected: status='escalated', regulatory_submission_date=null confirmed.
+  Regulatory: 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.9 Step 2** | REQ_6.9 | API | High | Draft
+  Description: Send PATCH /incidents/<id> with {"status": "closed"} and no regulatory_submission_date in body.
+  Expected: HTTP 422 Unprocessable Entity. error_code="INCIDENT_MISSING_REGULATORY_SUBMISSION".
+  Regulatory: 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.9 Step 3** | REQ_6.9 | API | High | Draft
+  Description: Assert response status 422 and detail.error_code="INCIDENT_MISSING_REGULATORY_SUBMISSION".
+  Expected: HTTP 422, error_code="INCIDENT_MISSING_REGULATORY_SUBMISSION".
+  Regulatory: 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.9 Step 4** | REQ_6.9 | DB | High | Draft
+  Description: Query DB: SELECT status FROM incident WHERE incident_id=<id>. Assert status='escalated'.
+  Expected: status='escalated'. DB unchanged. Incident not closed.
+  Regulatory: 42 CFR Part 455; State Adult Day Care Licensing
+
+### TC-6.10 - Job Endpoint on Escalated Incident With created_at 21 Hours Ago and Null regulatory_submission_date Creates Alert and Audit Event; DB Confirms Both; No time.sleep(); DB State Assertion Only | Incident
+*Preconditions: Fixture seeds escalated incident directly in DB with created_at=datetime.now(UTC)-21h (direct INSERT, not via API), regulatory_submission_date=null, status='escalated'. No time.sleep() used anywhere.*
+
+**TC-6.10 Step 1** | REQ_6.10 | DB | High | Draft
+  Description: Query DB: SELECT status, regulatory_submission_date, created_at FROM incident WHERE incident_id=<id>. Confirm status='escalated', regulatory_submission_date IS NULL, created_at < (now - 20h).
+  Expected: Row confirmed: escalated, no submission date, created over 20h ago.
+  Regulatory: 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.10 Step 2** | REQ_6.10 | API | High | Draft
+  Description: Send POST /jobs/check-escalated-incidents (or equivalent overdue-escalation job endpoint).
+  Expected: HTTP 200 OK. Job completes without error.
+  Regulatory: 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.10 Step 3** | REQ_6.10 | DB | High | Draft
+  Description: Query DB: SELECT COUNT(*) FROM audit_log WHERE resource_id=<id> AND event_type='ESCALATION_ALERT'. Assert count >= 1.
+  Expected: ESCALATION_ALERT audit event row created by job. Count >= 1.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+**TC-6.10 Step 4** | REQ_6.10 | DB | High | Draft
+  Description: Query DB: SELECT audit_id, timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer FROM audit_log WHERE resource_id=incident_id AND event_type='ESCALATION_ALERT'. Assert all 11 mandatory fields are non-null on the returned row. Assert data_affected contains no raw PHI values.
+  Expected: All 11 mandatory audit fields non-null. outcome='SUCCESS'. layer='APP_SERVICE'. No raw PHI in data_affected.
+  Regulatory: HIPAA §164.312(b); 42 CFR Part 2
+
+### TC-6.11 - New Incident Referencing original_incident_id as Addendum Returns 201; DB Confirms Addendum Row Created and All Fields of Original Row Unchanged via Direct DB Query | Incident
+*Preconditions: An incident (original_id known, status='draft', version=1) exists in tenant-aaa-001. program_administrator authenticated.*
+
+**TC-6.11 Step 1** | REQ_6.11 | DB | High | Draft
+  Description: Query DB: SELECT incident_id, status, description, version FROM incident WHERE incident_id=<original_id>. Capture all field values.
+  Expected: Original row confirmed with status='draft', version=1.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.11 Step 2** | REQ_6.11 | API | High | Draft
+  Description: Send POST /incidents with original_incident_id=<original_id> and valid body (incident_type="addendum").
+  Expected: HTTP 201 Created. New incident_id returned (distinct from original_id).
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.11 Step 3** | REQ_6.11 | DB | High | Draft
+  Description: Query DB: SELECT original_incident_id FROM incident WHERE incident_id=<new_id>.
+  Expected: original_incident_id=<original_id>. Addendum row correctly linked to original.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.11 Step 4** | REQ_6.11 | DB | High | Draft
+  Description: Query DB: SELECT status, description, version FROM incident WHERE incident_id=<original_id>. Assert all values identical to captured state from Step 1.
+  Expected: All fields of original row unchanged. status, description, version identical to pre-addendum state.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+### TC-6.12 - PATCH on Closed Incident Returns 422; DB Confirms All Fields Unchanged After Rejected Attempt | Incident
+*Preconditions: A closed incident (status='closed', version=2) exists in tenant-aaa-001. program_administrator authenticated.*
+
+**TC-6.12 Step 1** | REQ_6.12 | DB | High | Draft
+  Description: Query DB: SELECT status, version, description FROM incident WHERE incident_id=<id>. Confirm status='closed', version=2.
+  Expected: status='closed', version=2 confirmed.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.12 Step 2** | REQ_6.12 | API | High | Draft
+  Description: Send PATCH /incidents/<id> with {"description": "Updated description"} and program_administrator headers.
+  Expected: HTTP 422 Unprocessable Entity. Closed incidents are immutable.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.12 Step 3** | REQ_6.12 | API | High | Draft
+  Description: Assert response HTTP status code equals 422.
+  Expected: HTTP 422.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+**TC-6.12 Step 4** | REQ_6.12 | DB | High | Draft
+  Description: Query DB: SELECT status, version, description FROM incident WHERE incident_id=<id>. Assert all fields identical to pre-PATCH state.
+  Expected: status='closed', version=2, description unchanged. All fields unchanged.
+  Regulatory: HIPAA §164.308(a)(6); 42 CFR Part 455; State Adult Day Care Licensing
+
+### TC-6.13 - PATCH /incidents with Correct version Returns 200; DB Confirms version Incremented | Incident
+*Preconditions: An incident with status='escalated' exists (incident_id from fresh_incident_escalated fixture). program_administrator authenticated.*
+
+**TC-6.13 Step 1** | REQ_6.13 | DB | Medium | Draft
+  Description: Query DB: SELECT version FROM incident WHERE incident_id=<id>. Confirm version=1.
+  Expected: version=1, status='draft' confirmed.
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+**TC-6.13 Step 2** | REQ_6.13 | API | Medium | Draft
+  Description: Send PATCH /incidents/<id> with {"description": "Additional witness statement obtained.", "version": 1} and program_administrator headers.
+  Expected: HTTP 200 OK.
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+**TC-6.13 Step 3** | REQ_6.13 | API | Medium | Draft
+  Description: Assert response HTTP status code equals 200.
+  Expected: HTTP 200.
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+**TC-6.13 Step 4** | REQ_6.13 | DB | Medium | Draft
+  Description: Query DB: SELECT version FROM incident WHERE incident_id=<id>. Assert version = 2.
+  Expected: version=2. Server incremented version after successful PATCH.
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+### TC-6.14 - PATCH /incidents with Stale version Returns 409 INCIDENT_VERSION_CONFLICT; DB version Unchanged | Incident
+*Preconditions: An open incident with version=3 exists in tenant-aaa-001. program_administrator authenticated.*
+
+**TC-6.14 Step 1** | REQ_6.14 | API | High | Draft
+  Description: Send PATCH /incidents/<id> with {"version": 2} (stale; current version is 3).
+  Expected: HTTP 409 Conflict. error_code="INCIDENT_VERSION_CONFLICT".
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+**TC-6.14 Step 2** | REQ_6.14 | API | High | Draft
+  Description: Assert response status 409 and detail.error_code="INCIDENT_VERSION_CONFLICT".
+  Expected: HTTP 409, error_code="INCIDENT_VERSION_CONFLICT".
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+**TC-6.14 Step 3** | REQ_6.14 | DB | High | Draft
+  Description: Query DB: SELECT version FROM incident WHERE incident_id=<id>. Assert version = 3.
+  Expected: version=3. No change. Optimistic lock prevented the update.
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+### TC-6.15 - PATCH Closed Incident Returns 422 Before Version Check; DB version Unchanged | Incident
+*Preconditions: A closed incident with status='closed', version=2 exists in tenant-aaa-001. program_administrator authenticated.*
+
+**TC-6.15 Step 1** | REQ_6.15 | DB | High | Draft
+  Description: Query DB: SELECT status, version FROM incident WHERE incident_id=<id>. Confirm status='closed', version=2.
+  Expected: status='closed', version=2 confirmed.
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+**TC-6.15 Step 2** | REQ_6.15 | API | High | Draft
+  Description: Send PATCH /incidents/<id> with {"description": "change", "version": 1} (stale, but immutability check must fire first). incident status='closed'.
+  Expected: HTTP 422 Unprocessable Entity. Immutability check on closed status fires before version check. Not 409.
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+**TC-6.15 Step 3** | REQ_6.15 | API | High | Draft
+  Description: Assert response HTTP status code equals 422 (not 409), confirming immutability check precedes version check.
+  Expected: HTTP 422. Confirms correct priority: immutability > version conflict.
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+**TC-6.15 Step 4** | REQ_6.15 | DB | High | Draft
+  Description: Query DB: SELECT version FROM incident WHERE incident_id=<id>. Assert version = 2.
+  Expected: version=2. Unchanged. Neither the PATCH nor version increment applied.
+  Regulatory: HIPAA §164.308(a)(8); 42 CFR Part 455
+
+*Total steps in Incident: 56*
+
+
+## Sheet: AuditLog
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-7.1 - Audit Mandatory Fields Present on Participant Write | AuditLog
+*Preconditions: A program_administrator auth token is available. The audit_log table is queryable.*
+
+**TC-7.1 Step 1** | REQ_7.1 | Business Rules | P2 | Draft
+  Description: Send POST /participants with valid payload using program_administrator headers. Record the returned participant_id.
+  Expected: HTTP 201 returned.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-7.1 Step 2** | REQ_7.1 | Business Rules | P2 | Draft
+  Description: Query audit_log: SELECT * FROM audit_log WHERE resource_type='Participant' AND action_type='PHI_WRITE' AND resource_id=<participant_id> ORDER BY rowid DESC LIMIT 1.
+  Expected: A PHI_WRITE audit row exists.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+**TC-7.1 Step 3** | REQ_7.1 | Business Rules | P2 | Draft
+  Description: Assert all 11 mandatory fields are non-null: timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: All 11 fields are non-null in the audit row.
+  Regulatory: HIPAA §164.312(b); SOC 2 CC7.2
+
+### TC-7.2 - Unauthorized Role Denied Write to PHI-Protected Resource; ACCESS_DENIED Audit Event Logged | AuditLog
+*Preconditions: A billing_specialist auth token is available. A Participant with is_sud_record=true exists.*
+
+**TC-7.2 Step 1** | REQ_7.2 | Business Rules | P2 | Draft
+  Description: Send POST /participants using billing_specialist headers.
+  Expected: HTTP 403 Forbidden returned.
+  Regulatory: HIPAA §164.308(a)(4); 42 CFR Part 2 §2.13(b)
+
+**TC-7.2 Step 2** | REQ_7.2 | Business Rules | P2 | Draft
+  Description: Query audit_log: SELECT action_type, outcome, user_id, tenant_id FROM audit_log WHERE action_type=ACCESS_DENIED AND user_id=billing_specialist_id ORDER BY rowid DESC LIMIT 1.
+  Expected: ACCESS_DENIED audit row exists with outcome=DENIED and all 11 mandatory fields non-null.
+  Regulatory: HIPAA §164.308(a)(4); 42 CFR Part 2 §2.13(b)
+
+**TC-7.2 Step 3** | REQ_7.2 | Business Rules | P2 | Draft
+  Description: Assert data_affected contains no PHI values.
+  Expected: No PHI values in data_affected field of ACCESS_DENIED row.
+  Regulatory: HIPAA §164.308(a)(4); 42 CFR Part 2 §2.13(b)
+
+### TC-7.3 - Audit Mandatory Fields Present on MAR Controlled Substance Read | AuditLog
+*Preconditions: A MARRecord with is_controlled_substance=true exists. A nurse_medication_aide auth token is available.*
+
+**TC-7.3 Step 1** | REQ_7.3 | Business Rules | P2 | Draft
+  Description: Send GET /mar-records/{mar_id} for a controlled-substance record using nurse_medication_aide headers.
+  Expected: HTTP 200 returned.
+  Regulatory: 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+
+**TC-7.3 Step 2** | REQ_7.3 | Business Rules | P2 | Draft
+  Description: Query audit_log: SELECT * FROM audit_log WHERE resource_type='MARRecord' AND action_type='PHI_READ' AND resource_id=<mar_id> ORDER BY rowid DESC LIMIT 1.
+  Expected: A PHI_READ audit row exists.
+  Regulatory: 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+
+**TC-7.3 Step 3** | REQ_7.3 | Business Rules | P2 | Draft
+  Description: Assert all 11 mandatory fields are non-null on the returned audit row: timestamp, user_id, tenant_id, session_id, action_type, resource_type, resource_id, data_affected, source_ip, outcome, layer.
+  Expected: All 11 mandatory fields non-null on returned row.
+  Regulatory: 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+
+### TC-7.4 - PHI Values Absent from Audit Log Payloads Across All Entities | AuditLog
+*Preconditions: Audit rows exist for all six entities. The DB is queryable directly.*
+
+**TC-7.4 Step 1** | REQ_7.4 | DB | P2 | Draft
+  Description: Query audit_log: SELECT data_affected FROM audit_log WHERE resource_type IN ('Participant','User','Attendance','Claim','MARRecord','Incident').
+  Expected: Query executes and returns rows.
+  Regulatory: HIPAA §164.312(b)
+
+**TC-7.4 Step 2** | REQ_7.4 | DB | P2 | Draft
+  Description: Assert no data_affected value contains PHI field values: SSN, date_of_birth, first_name, last_name, medication_name, medicaid_id.
+  Expected: No PHI values appear in any data_affected column across all audit rows.
+  Regulatory: HIPAA §164.312(b)
+
+### TC-7.5 - Access Denied Audit Event Logged for Every 403 Response | AuditLog
+*Preconditions: A billing_specialist auth token is available. A SUD participant record exists.*
+
+**TC-7.5 Step 1** | REQ_7.5 | Business Rules | P2 | Draft
+  Description: Send GET /participants/{participant_id} using billing_specialist headers on a participant with is_sud_record=true.
+  Expected: HTTP 403 Forbidden returned.
+  Regulatory: 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+
+**TC-7.5 Step 2** | REQ_7.5 | Business Rules | P2 | Draft
+  Description: Query audit_log: SELECT action_type, outcome FROM audit_log WHERE action_type=ACCESS_DENIED AND user_id=billing_specialist_id ORDER BY rowid DESC LIMIT 1.
+  Expected: ACCESS_DENIED audit row exists with outcome=DENIED.
+  Regulatory: 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+
+**TC-7.5 Step 3** | REQ_7.5 | Business Rules | P2 | Draft
+  Description: Send GET /participants/{participant_id} using compliance_officer headers on the same SUD participant.
+  Expected: HTTP 200 returned.
+  Regulatory: 42 CFR Part 2 §2.13(b)
+
+**TC-7.5 Step 4** | REQ_7.5 | Business Rules | P2 | Draft
+  Description: Query audit_log: SELECT action_type, outcome FROM audit_log WHERE action_type=PHI_READ AND user_id=compliance_officer_id ORDER BY rowid DESC LIMIT 1.
+  Expected: PHI_READ audit row exists with outcome=SUCCESS and all 11 mandatory fields non-null.
+  Regulatory: 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+
+### TC-7.6 - Audit Row Exists in DB After API Call Completes | AuditLog
+*Preconditions: A program_administrator auth token is available. The audit_log table is queryable.*
+
+**TC-7.6 Step 1** | REQ_7.6 | Business Rules | P2 | Draft
+  Description: Send POST /participants with valid payload using program_administrator headers. Record the returned participant_id.
+  Expected: HTTP 201 returned.
+  Regulatory: HIPAA §164.312(b)
+
+**TC-7.6 Step 2** | REQ_7.6 | Business Rules | P2 | Draft
+  Description: Query audit_log: SELECT * FROM audit_log WHERE resource_type='Participant' AND action_type='PHI_WRITE' AND resource_id=<participant_id> ORDER BY rowid DESC LIMIT 1.
+  Expected: DB query confirms audit row exists in audit_log table after API call completes; no timestamp comparison used.
+  Regulatory: HIPAA §164.312(b)
+
+### TC-7.7 - Claim Submission Produces PHI_DISCLOSE Audit Event | AuditLog
+*Preconditions: A Claim in draft status exists. A billing_specialist auth token is available.*
+
+**TC-7.7 Step 1** | REQ_7.7 | Business Rules | P2 | Draft
+  Description: Send PATCH /claims/{claim_id} with status=submitted using billing_specialist headers.
+  Expected: HTTP 200 returned.
+  Regulatory: HIPAA §164.312(b); CMS EDI requirements
+
+**TC-7.7 Step 2** | REQ_7.7 | Business Rules | P2 | Draft
+  Description: Query audit_log: SELECT action_type, data_affected FROM audit_log WHERE action_type='PHI_DISCLOSE' AND resource_id=claim_id ORDER BY rowid DESC LIMIT 1.
+  Expected: A PHI_DISCLOSE audit row exists with all 11 mandatory fields non-null and no raw PHI values in data_affected.
+  Regulatory: HIPAA §164.312(b); CMS EDI requirements
+
+**TC-7.7 Step 3** | REQ_7.7 | Business Rules | P2 | Draft
+  Description: Assert data_affected in PHI_DISCLOSE row contains no raw PHI values: no SSN, no first_name, no last_name, no medicaid_id, no medication_name.
+  Expected: data_affected contains field names only, no PHI values.
+  Regulatory: HIPAA §164.312(b); CMS EDI requirements
+
+### TC-7.8 - SUD-Related Incident Write Produces Separate Audit Event | AuditLog
+*Preconditions: A program_administrator auth token is available. POST /incidents endpoint is available. Two incidents will be created in this test: one with is_sud_related=true (sud_incident_id) and one with is_sud_related=false (non_sud_incident_id). Both incident_ids are captured after their respective POST calls.*
+
+**TC-7.8 Step 1** | REQ_7.8 | Business Rules | P2 | Draft
+  Description: Send POST /incidents with is_sud_related=true using program_administrator headers. Record returned incident_id as sud_incident_id. Send POST /incidents with is_sud_related=false using program_administrator headers. Record returned incident_id as non_sud_incident_id.
+  Expected: Both POST calls return HTTP 201. sud_incident_id and non_sud_incident_id captured.
+  Regulatory: 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+
+**TC-7.8 Step 2** | REQ_7.8 | Business Rules | P2 | Draft
+  Description: Query audit_log: SELECT audit_id, resource_id FROM audit_log WHERE resource_type='Incident' AND action_type='PHI_WRITE' AND resource_id IN (sud_incident_id, non_sud_incident_id).
+  Expected: Two distinct audit rows exist — one with resource_id=sud_incident_id and one with resource_id=non_sud_incident_id — confirming separate audit events were emitted for each write.
+  Regulatory: 42 CFR Part 2 §2.13(b); HIPAA §164.312(b)
+
+### TC-7.9 - Claim Audit Events Carry 10-Year Retention Marker | AuditLog
+*Preconditions: At least one Claim operation has been recorded in audit_log. The audit_log table has a retention_years column.*
+
+**TC-7.9 Step 1** | REQ_7.9 | DB | P2 | Draft
+  Description: Query audit_log: SELECT retention_years FROM audit_log WHERE resource_type='Claim'.
+  Expected: Query executes and returns rows.
+  Regulatory: CMS 10-year audit retention; HIPAA §164.312(b)
+
+**TC-7.9 Step 2** | REQ_7.9 | DB | P2 | Draft
+  Description: Assert retention_years=10 for all Claim audit rows. Assert retention_years=6 for all non-Claim entity audit rows.
+  Expected: Audit rows for Claim operations carry 10-year retention marker; all other entities carry 6-year marker.
+  Regulatory: CMS 10-year audit retention; HIPAA §164.312(b)
+
+**TC-7.9 Step 3** | REQ_7.9 | DB | P2 | Draft
+  Description: Query audit_log: SELECT retention_years FROM audit_log WHERE resource_type IN (Participant, User, Attendance, MARRecord, Incident). Assert retention_years=6 for all non-Claim entity audit rows.
+  Expected: All non-Claim entity audit rows carry 6-year retention marker.
+  Regulatory: CMS 10-year audit retention; HIPAA §164.312(b)
+
+### TC-7.10 - Audit Log Rows Contain No Raw PHI Field Values | AuditLog
+*Preconditions: The audit_log table contains rows from multiple entity operations across all six entities.*
+
+**TC-7.10 Step 1** | REQ_7.10 | DB | P2 | Draft
+  Description: Query audit_log: SELECT * FROM audit_log.
+  Expected: Query executes and returns rows.
+  Regulatory: HIPAA §164.312(b)
+
+**TC-7.10 Step 2** | REQ_7.10 | DB | P2 | Draft
+  Description: Assert no audit row contains SSN, DOB, medication_name, medicaid_id, or other direct PHI values in any column.
+  Expected: Broad DB scan confirms no audit row contains SSN, DOB, medication_name, or other direct PHI field value.
+  Regulatory: HIPAA §164.312(b)
+
+*Total steps in AuditLog: 27*
+
+
+## Sheet: RBACSweep
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-8.1 - Program_administrator Write Permitted on Attendance and Claims | RBACSweep
+*Preconditions: program_administrator auth token is available. Valid Attendance payload is ready. A draft Claim created by billing_specialist exists in DB (claim_id available as fixture).*
+
+**TC-8.1 Step 1** | REQ_8.1 | API | P2 | Draft
+  Description: Send POST /attendance with valid payload using program_administrator headers.
+  Expected: HTTP 201 returned. Attendance row exists in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.1 Step 2** | REQ_8.1 | API | P2 | Draft
+  Description: Send PATCH /claims/{claim_id} with status=submitted and correct version using program_administrator headers. claim_id is taken from the fixture draft Claim created in preconditions.
+  Expected: HTTP 200 or 201 returned. Claim row updated in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.1 Step 3** | REQ_8.1 | DB | P2 | Draft
+  Description: Query DB to confirm attendance and claim rows reflect program_administrator writes.
+  Expected: Both rows exist with correct created_by or updated_by in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.2 - Care_coordinator Write Permitted on Attendance and Incidents | RBACSweep
+*Preconditions: care_coordinator auth token is available. Valid Attendance and Incident payloads are ready.*
+
+**TC-8.2 Step 1** | REQ_8.2 | API | P2 | Draft
+  Description: Send POST /attendance with valid payload using care_coordinator headers.
+  Expected: HTTP 201 returned. Attendance row exists in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.2 Step 2** | REQ_8.2 | API | P2 | Draft
+  Description: Send POST /incidents with valid payload using care_coordinator headers.
+  Expected: HTTP 201 returned. Incident row exists in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.2 Step 3** | REQ_8.2 | DB | P2 | Draft
+  Description: Query DB to confirm both rows were created by care_coordinator.
+  Expected: Rows exist with correct created_by in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.3 - Nurse_medication_aide Write Permitted on MARRecord Only | RBACSweep
+*Preconditions: nurse_medication_aide auth token is available. Valid MARRecord and Claim payloads are ready.*
+
+**TC-8.3 Step 1** | REQ_8.3 | API | P2 | Draft
+  Description: Send POST /mar-records with valid payload using nurse_medication_aide headers.
+  Expected: HTTP 201 returned. MARRecord row exists in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.3 Step 2** | REQ_8.3 | API | P2 | Draft
+  Description: Send POST /claims with valid payload using nurse_medication_aide headers.
+  Expected: HTTP 403 Forbidden. No claim row created in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.3 Step 3** | REQ_8.3 | DB | P2 | Draft
+  Description: Query DB to confirm no claim was created by nurse_medication_aide.
+  Expected: Claim count for participant unchanged in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.4 - Billing_specialist Write Permitted on Claims Only | RBACSweep
+*Preconditions: billing_specialist auth token is available. Valid Claim and MARRecord payloads are ready.*
+
+**TC-8.4 Step 1** | REQ_8.4 | API | P2 | Draft
+  Description: Send POST /claims with valid payload using billing_specialist headers.
+  Expected: HTTP 201 returned. Claim row exists in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.4 Step 2** | REQ_8.4 | API | P2 | Draft
+  Description: Send POST /mar-records with valid payload using billing_specialist headers.
+  Expected: HTTP 403 Forbidden. No MARRecord row created in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.4 Step 3** | REQ_8.4 | DB | P2 | Draft
+  Description: Query DB to confirm no MAR record was created by billing_specialist.
+  Expected: MARRecord count unchanged in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.5 - Physician Denied Write on Participant Endpoint | RBACSweep
+*Preconditions: physician auth token is available.*
+
+**TC-8.5 Step 1** | REQ_8.5 | API | P2 | Draft
+  Description: Send POST /participants using physician headers.
+  Expected: HTTP 403 Forbidden. DB confirms no participant row created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.5 Step 2** | REQ_8.5 | DB | P2 | Draft
+  Description: Query DB to confirm no participant row was created by physician.
+  Expected: Entity count unchanged in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.6 - Physician Denied Write on User Endpoint | RBACSweep
+*Preconditions: physician auth token is available.*
+
+**TC-8.6 Step 1** | REQ_8.6 | API | P2 | Draft
+  Description: Send POST /users using physician headers.
+  Expected: HTTP 403 Forbidden. DB confirms no user row created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.6 Step 2** | REQ_8.6 | DB | P2 | Draft
+  Description: Query DB to confirm no user row was created by physician.
+  Expected: Entity count unchanged in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.7 - Physician Denied Write on Attendance Endpoint | RBACSweep
+*Preconditions: physician auth token is available.*
+
+**TC-8.7 Step 1** | REQ_8.7 | API | P2 | Draft
+  Description: Send POST /attendance using physician headers.
+  Expected: HTTP 403 Forbidden. DB confirms no attendance row created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.7 Step 2** | REQ_8.7 | DB | P2 | Draft
+  Description: Query DB to confirm no attendance row was created by physician.
+  Expected: Entity count unchanged in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.8 - Physician Denied Write on Claim Endpoint | RBACSweep
+*Preconditions: physician auth token is available.*
+
+**TC-8.8 Step 1** | REQ_8.8 | API | P2 | Draft
+  Description: Send POST /claims using physician headers.
+  Expected: HTTP 403 Forbidden. DB confirms no claim row created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.8 Step 2** | REQ_8.8 | DB | P2 | Draft
+  Description: Query DB to confirm no claim row was created by physician.
+  Expected: Entity count unchanged in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.9 - Physician Denied Write on MARRecord Endpoint | RBACSweep
+*Preconditions: physician auth token is available.*
+
+**TC-8.9 Step 1** | REQ_8.9 | API | P2 | Draft
+  Description: Send POST /mar-records using physician headers.
+  Expected: HTTP 403 Forbidden. DB confirms no marrecord row created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.9 Step 2** | REQ_8.9 | DB | P2 | Draft
+  Description: Query DB to confirm no marrecord row was created by physician.
+  Expected: Entity count unchanged in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.10 - Physician Denied Write on Incident Endpoint | RBACSweep
+*Preconditions: physician auth token is available.*
+
+**TC-8.10 Step 1** | REQ_8.10 | API | P2 | Draft
+  Description: Send POST /incidents using physician headers.
+  Expected: HTTP 403 Forbidden. DB confirms no incident row created.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.10 Step 2** | REQ_8.10 | DB | P2 | Draft
+  Description: Query DB to confirm no incident row was created by physician.
+  Expected: Entity count unchanged in DB.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.11 - Participant_family Denied All Staff Entity Endpoints | RBACSweep
+*Preconditions: participant_family auth token is available. All six entity endpoints are accessible.*
+
+**TC-8.11 Step 1** | REQ_8.11 | API | P2 | Draft
+  Description: Send POST to each of the six write endpoints (/participants, /users, /attendance, /claims, /mar-records, /incidents) using participant_family headers.
+  Expected: HTTP 403 Forbidden returned for every POST request. participant_family has no write access to any staff entity endpoint.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.11 Step 2** | REQ_8.11 | DB | P2 | Draft
+  Description: Query DB: SELECT COUNT(*) FROM participant WHERE tenant_id='tenant-aaa-001' after each POST; assert count unchanged. Repeat for user, attendance, claim, mar_record, incident tables. Assert all six counts equal count_before for each respective table.
+  Expected: No entity rows created or modified. DB state unchanged.
+  Regulatory: HIPAA §164.308(a)(4)
+
+### TC-8.12 - Compliance_officer Read Permitted on All Entities | RBACSweep
+*Preconditions: compliance_officer auth token is available. At least one record exists for each of the six entities.*
+
+**TC-8.12 Step 1** | REQ_8.12 | API | P2 | Draft
+  Description: Send GET to each of the six entity endpoints using compliance_officer headers.
+  Expected: HTTP 200 returned for every endpoint.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.12 Step 2** | REQ_8.12 | API | P2 | Draft
+  Description: Assert response bodies contain expected record data for each entity.
+  Expected: compliance_officer GET on all six entity endpoints returns 200 with record data.
+  Regulatory: HIPAA §164.308(a)(4)
+
+**TC-8.12 Step 3** | REQ_8.12 | DB | P2 | Draft
+  Description: Query DB to confirm each entity record returned in response matches the row in DB by primary key.
+  Expected: Response data matches DB state for each entity.
+  Regulatory: HIPAA §164.308(a)(4)
+
+*Total steps in RBACSweep: 29*
+
+
+## Sheet: TenantIsolation
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-9.1 - Participant Not Accessible from Other Tenant | TenantIsolation
+*Preconditions: A Participant record exists in tenant A. A user from tenant B is authenticated.*
+
+**TC-9.1 Step 1** | REQ_9.1 | API | P2 | Draft
+  Description: Send GET /participants/{participant_id_tenant_a} using tenant-B user headers.
+  Expected: HTTP 404 Not Found returned. No participant data from tenant A exposed.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.1 Step 2** | REQ_9.1 | DB | P2 | Draft
+  Description: Query DB to confirm the participant row exists for tenant A and was not modified.
+  Expected: Participant row for tenant A exists unchanged. No cross-tenant access occurred.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.1 Step 3** | REQ_9.1 | API | P2 | Draft
+  Description: Query audit_log: SELECT action_type, outcome FROM audit_log WHERE action_type=ACCESS_DENIED AND tenant_id=tenant_b_id AND resource_id=<participant_id_tenant_a> ORDER BY rowid DESC LIMIT 1.
+  Expected: ACCESS_DENIED audit event logged with outcome=DENIED confirming cross-tenant attempt recorded per HIPAA requirements.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+### TC-9.2 - User Token Rejected on Other Tenant Endpoints | TenantIsolation
+*Preconditions: Auth headers for tenant A (X-Tenant-Id: tenant-aaa-001) are available. Tenant B endpoints (X-Tenant-Id: tenant-bbb-002) are accessible.*
+
+**TC-9.2 Step 1** | REQ_9.2 | API | P2 | Draft
+  Description: Send requests to all tenant B endpoints using auth headers for tenant A (X-Tenant-Id: tenant-aaa-001).
+  Expected: HTTP 403 Forbidden returned for all tenant B endpoint requests.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.2 Step 2** | REQ_9.2 | DB | P2 | Draft
+  Description: Query DB to confirm no tenant B records were created or modified.
+  Expected: No tenant B records created or modified. JWT from tenant A rejected on all tenant B endpoints.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.2 Step 3** | REQ_9.2 | API | P2 | Draft
+  Description: Query audit_log: SELECT action_type, outcome FROM audit_log WHERE action_type=ACCESS_DENIED AND tenant_id=tenant_b_id ORDER BY rowid DESC LIMIT 1.
+  Expected: ACCESS_DENIED audit event logged with outcome=DENIED confirming cross-tenant attempt recorded per HIPAA requirements.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+### TC-9.3 - Attendance Not Accessible from Other Tenant | TenantIsolation
+*Preconditions: An Attendance record exists in tenant A. A user from tenant B is authenticated.*
+
+**TC-9.3 Step 1** | REQ_9.3 | API | P2 | Draft
+  Description: Send GET /attendance/{attendance_id_tenant_a} using tenant-B user headers.
+  Expected: HTTP 404 Not Found returned. No attendance data from tenant A exposed.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.3 Step 2** | REQ_9.3 | DB | P2 | Draft
+  Description: Query DB to confirm the attendance row for tenant A exists unchanged.
+  Expected: Attendance row for tenant A unchanged. No cross-tenant access occurred.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.3 Step 3** | REQ_9.3 | API | P2 | Draft
+  Description: Query audit_log: SELECT action_type, outcome FROM audit_log WHERE action_type=ACCESS_DENIED AND tenant_id=tenant_b_id AND resource_id=<attendance_id_tenant_a> ORDER BY rowid DESC LIMIT 1.
+  Expected: ACCESS_DENIED audit event logged with outcome=DENIED confirming cross-tenant attempt recorded per HIPAA requirements.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+### TC-9.4 - Claim Not Accessible from Other Tenant | TenantIsolation
+*Preconditions: A Claim record exists in tenant A. A user from tenant B is authenticated.*
+
+**TC-9.4 Step 1** | REQ_9.4 | API | P2 | Draft
+  Description: Send GET /claims/{claim_id_tenant_a} using tenant-B user headers.
+  Expected: HTTP 404 Not Found returned. No claim data from tenant A exposed.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.4 Step 2** | REQ_9.4 | DB | P2 | Draft
+  Description: Query DB to confirm the claim row for tenant A exists unchanged.
+  Expected: Claim row for tenant A unchanged. No cross-tenant access occurred.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.4 Step 3** | REQ_9.4 | API | P2 | Draft
+  Description: Query audit_log: SELECT action_type, outcome FROM audit_log WHERE action_type=ACCESS_DENIED AND tenant_id=tenant_b_id AND resource_id=<claim_id_tenant_a> ORDER BY rowid DESC LIMIT 1.
+  Expected: ACCESS_DENIED audit event logged with outcome=DENIED confirming cross-tenant attempt recorded per HIPAA requirements.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+### TC-9.5 - MARRecord Not Accessible from Other Tenant | TenantIsolation
+*Preconditions: A MARRecord exists in tenant A. A user from tenant B is authenticated.*
+
+**TC-9.5 Step 1** | REQ_9.5 | API | P2 | Draft
+  Description: Send GET /mar-records/{mar_id_tenant_a} using tenant-B user headers.
+  Expected: HTTP 404 Not Found returned. No MARRecord data from tenant A exposed.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.5 Step 2** | REQ_9.5 | DB | P2 | Draft
+  Description: Query DB to confirm the MARRecord row for tenant A exists unchanged.
+  Expected: MARRecord row for tenant A unchanged. No cross-tenant access occurred.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.5 Step 3** | REQ_9.5 | API | P2 | Draft
+  Description: Query audit_log: SELECT action_type, outcome FROM audit_log WHERE action_type=ACCESS_DENIED AND tenant_id=tenant_b_id AND resource_id=<mar_id_tenant_a> ORDER BY rowid DESC LIMIT 1.
+  Expected: ACCESS_DENIED audit event logged with outcome=DENIED confirming cross-tenant attempt recorded per HIPAA requirements.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+### TC-9.6 - Incident Not Accessible from Other Tenant | TenantIsolation
+*Preconditions: An Incident record exists in tenant A. A user from tenant B is authenticated.*
+
+**TC-9.6 Step 1** | REQ_9.6 | API | P2 | Draft
+  Description: Send GET /incidents/{incident_id_tenant_a} using tenant-B user headers.
+  Expected: HTTP 404 Not Found returned. No incident data from tenant A exposed.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.6 Step 2** | REQ_9.6 | DB | P2 | Draft
+  Description: Query DB to confirm the incident row for tenant A exists unchanged.
+  Expected: Incident row for tenant A unchanged. No cross-tenant access occurred.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+**TC-9.6 Step 3** | REQ_9.6 | API | P2 | Draft
+  Description: Query audit_log: SELECT action_type, outcome FROM audit_log WHERE action_type=ACCESS_DENIED AND tenant_id=tenant_b_id AND resource_id=<incident_id_tenant_a> ORDER BY rowid DESC LIMIT 1.
+  Expected: ACCESS_DENIED audit event logged with outcome=DENIED confirming cross-tenant attempt recorded per HIPAA requirements.
+  Regulatory: HIPAA §164.308(a)(4); Multi-tenant isolation
+
+### TC-9.7 - Unique Constraints Are Scoped Per Tenant | TenantIsolation
+*Preconditions: A participant with medicaid_id=TEST000000001 and a user with email=testuser+1@care-art-test.invalid exist in tenant A.*
+
+**TC-9.7 Step 1** | REQ_9.7 | Business Rules | P2 | Draft
+  Description: Send POST /participants with medicaid_id=TEST000000001 using tenant-B credentials. Use program_administrator auth headers for tenant B (X-Tenant-Id: tenant-bbb-002).
+  Expected: HTTP 201 returned. Participant created in tenant B with same medicaid_id.
+  Regulatory: CMS Medicaid Billing Integrity; Multi-tenant isolation
+
+**TC-9.7 Step 2** | REQ_9.7 | Business Rules | P2 | Draft
+  Description: Send POST /users with email=testuser+1@care-art-test.invalid using tenant-B credentials. Use program_administrator auth headers for tenant B (X-Tenant-Id: tenant-bbb-002).
+  Expected: HTTP 201 returned. User created in tenant B with same email.
+  Regulatory: CMS Medicaid Billing Integrity; Multi-tenant isolation
+
+**TC-9.7 Step 3** | REQ_9.7 | Business Rules | P2 | Draft
+  Description: Query DB: SELECT COUNT(*) FROM participant WHERE medicaid_id='TEST000000001'. SELECT COUNT(*) FROM user WHERE email='testuser+1@care-art-test.invalid'.
+  Expected: Two participant rows with that medicaid_id coexist (one per tenant). Two user rows with that email coexist across tenants.
+  Regulatory: CMS Medicaid Billing Integrity; Multi-tenant isolation
+
+**TC-9.7 Step 4** | REQ_9.7 | Business Rules | P2 | Draft
+  Description: Query DB: SELECT COUNT(*) FROM participant WHERE medicaid_id=TEST000000001 AND tenant_id=tenant_a_id. Assert count=1. SELECT COUNT(*) FROM user WHERE email=testuser+1@care-art-test.invalid AND tenant_id=tenant_a_id. Assert count=1.
+  Expected: Exactly 1 participant row in tenant A. Exactly 1 user row in tenant A. Tenant A uniqueness not violated by tenant B creation.
+  Regulatory: CMS Medicaid Billing Integrity; Multi-tenant isolation
+
+*Total steps in TenantIsolation: 22*
+
+
+## Sheet: DBSchema
+
+Columns: Step | Requirement Group | REQ_ID | Step Description | Expected Result | Layer | Regulatory Reference | Priority | Status | Actual Result | Pass/Fail | Evidence
+
+### TC-10.1 - UNIQUE Index on (tenant_id, medicaid_id) Present on Participant Table
+*Preconditions: SQLite in-memory DB created from Base.metadata. schema_conn fixture available.*
+
+**TC-10.1 Step 1** | REQ_10.1 | DB | P1 | Draft
+  Description: Run PRAGMA index_list on participant table. Assert UNIQUE index exists on columns (tenant_id, medicaid_id).
+  Expected: UNIQUE index on (tenant_id, medicaid_id) confirmed present.
+  Regulatory: HIPAA §164.312(c); CMS data integrity
+
+### TC-10.2 - UNIQUE Index on (tenant_id, email) and PRIMARY KEY on user_id Present on User Table
+*Preconditions: SQLite in-memory DB created from Base.metadata. schema_conn fixture available.*
+
+**TC-10.2 Step 1** | REQ_10.2 | DB | P1 | Draft
+  Description: Run PRAGMA index_list on user table. Assert UNIQUE index on (tenant_id, email). Assert user_id column exists.
+  Expected: UNIQUE index on (tenant_id, email) and user_id column confirmed present.
+  Regulatory: HIPAA §164.312(c); CMS data integrity
+
+### TC-10.3 - UNIQUE Index on (tenant_id, participant_id, date_of_service) Present on Attendance Table
+*Preconditions: SQLite in-memory DB created from Base.metadata. schema_conn fixture available.*
+
+**TC-10.3 Step 1** | REQ_10.3 | DB | P1 | Draft
+  Description: Run PRAGMA index_list on attendance table. Assert UNIQUE index on (tenant_id, participant_id, date_of_service).
+  Expected: UNIQUE index on (tenant_id, participant_id, date_of_service) confirmed present.
+  Regulatory: CMS billing integrity; HIPAA §164.312(c)
+
+### TC-10.4 - UNIQUE Index on claim_reference_number and Composite Billing Key Present on Claim Table
+*Preconditions: SQLite in-memory DB created from Base.metadata. schema_conn fixture available.*
+
+**TC-10.4 Step 1** | REQ_10.4 | DB | P1 | Draft
+  Description: Run PRAGMA index_list on claim table. Assert UNIQUE index on claim_reference_number. Assert composite UNIQUE index on (tenant_id, participant_id, date_of_service_start, procedure_code, payer_type).
+  Expected: Both UNIQUE indexes confirmed present.
+  Regulatory: CMS billing integrity; HIPAA §164.312(c)
+
+### TC-10.5 - UNIQUE Index on (tenant_id, participant_id, medication_name, scheduled_time) Present on MAR Record Table
+*Preconditions: SQLite in-memory DB created from Base.metadata. schema_conn fixture available.*
+
+**TC-10.5 Step 1** | REQ_10.5 | DB | P1 | Draft
+  Description: Run PRAGMA index_list on mar_record table. Assert UNIQUE index on (tenant_id, participant_id, medication_name, scheduled_time).
+  Expected: UNIQUE index on (tenant_id, participant_id, medication_name, scheduled_time) confirmed present.
+  Regulatory: 42 CFR Part 2; HIPAA §164.312(c)
+
+### TC-10.6 - NOT NULL Constraints Confirmed on All Mandatory Fields for All Six Entities
+*Preconditions: SQLite in-memory DB created from Base.metadata. schema_conn fixture available.*
+
+**TC-10.6 Step 1** | REQ_10.6 | DB | P1 | Draft
+  Description: Run PRAGMA table_info on all six entity tables. Assert NOT NULL on all mandatory fields per entity.
+  Expected: NOT NULL confirmed on all mandatory fields for all six entities.
+  Regulatory: HIPAA §164.312(c); CMS data integrity
+
+### TC-10.7 - version Column of INTEGER Type Present on All Six Entity Tables
+*Preconditions: SQLite in-memory DB created from Base.metadata. schema_conn fixture available.*
+
+**TC-10.7 Step 1** | REQ_10.7 | DB | P1 | Draft
+  Description: Run PRAGMA table_info on all six entity tables. Assert version column exists with INTEGER type.
+  Expected: version column of INTEGER type confirmed on all six entity tables.
+  Regulatory: HIPAA §164.312(b); data integrity
+
+### TC-10.8 - is_deleted Defaults False on Participant and User Tables; No Row Has NULL is_deleted
+*Preconditions: SQLite in-memory DB created from Base.metadata. schema_conn fixture available.*
+
+**TC-10.8 Step 1** | REQ_10.8 | DB | P1 | Draft
+  Description: Run PRAGMA table_info on participant and user tables. Assert is_deleted column has DEFAULT 0 or false. Assert SELECT COUNT(*) WHERE is_deleted IS NULL = 0.
+  Expected: is_deleted column has DEFAULT false on participant; no row has NULL is_deleted.
+  Regulatory: HIPAA §164.530(j) record retention
+
+*Total steps in DBSchema: 8*

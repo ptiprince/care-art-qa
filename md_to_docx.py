@@ -9,6 +9,13 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from PIL import ImageFont as _ImageFont
+    _PIL_OK = True
+except ImportError:
+    _PIL_OK = False
+    _ImageFont = None  # type: ignore[assignment]
+
 from docx import Document
 from docx.shared import Cm, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
@@ -41,6 +48,96 @@ _EMOJI_RE = re.compile(
     "]+",
     flags=re.UNICODE,
 )
+
+# ── PIL font loading for accurate column-width measurement ────────────────────
+_FONT_PT = 12           # matches Word BODY_PT (12pt)
+_PX_TO_CM = 2.54 / 72  # PIL renders at 72 DPI; 1 px = 1 pt = 1/72 inch
+
+_FONT_REG_PATHS = [
+    # Calibri — not installed by default on macOS
+    "/Library/Fonts/Calibri.ttf",
+    "/Library/Fonts/Microsoft/Calibri.ttf",
+    "C:/Windows/Fonts/calibri.ttf",
+    # Carlito — metric-compatible open-source substitute for Calibri
+    "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf",
+    # Arial — closest widely available substitute on macOS / Linux
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/Library/Fonts/Arial.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "/usr/share/fonts/truetype/msttcorefonts/Arial.ttf",
+]
+_FONT_BOLD_PATHS = [
+    "/Library/Fonts/Calibri Bold.ttf",
+    "/Library/Fonts/Microsoft/Calibri Bold.ttf",
+    "C:/Windows/Fonts/calibrib.ttf",
+    "/usr/share/fonts/truetype/crosextra/Carlito-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/Library/Fonts/Arial Bold.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+    "/usr/share/fonts/truetype/msttcorefonts/Arial_Bold.ttf",
+]
+
+_FONT_REG = None
+_FONT_BOLD = None
+_BOLD_IS_FALLBACK = False  # True when bold font not found; regular used + 1.08× scale
+_FONT_SOURCE = "not loaded"
+_FONT_BOLD_SOURCE = "not loaded"
+_FONTS_LOADED = False
+
+
+def _load_fonts() -> None:
+    global _FONT_REG, _FONT_BOLD, _BOLD_IS_FALLBACK
+    global _FONT_SOURCE, _FONT_BOLD_SOURCE, _FONTS_LOADED
+    if _FONTS_LOADED:
+        return
+    _FONTS_LOADED = True
+    if not _PIL_OK:
+        _FONT_SOURCE = _FONT_BOLD_SOURCE = "PIL not available"
+        return
+    for path in _FONT_REG_PATHS:
+        try:
+            _FONT_REG = _ImageFont.truetype(path, _FONT_PT)
+            _FONT_SOURCE = path
+            break
+        except (IOError, OSError):
+            pass
+    if _FONT_REG is None:
+        _FONT_SOURCE = _FONT_BOLD_SOURCE = "no usable TTF found; using char-count fallback"
+        return
+    for path in _FONT_BOLD_PATHS:
+        try:
+            _FONT_BOLD = _ImageFont.truetype(path, _FONT_PT)
+            _FONT_BOLD_SOURCE = path
+            break
+        except (IOError, OSError):
+            pass
+    if _FONT_BOLD is None:
+        _FONT_BOLD = _FONT_REG
+        _FONT_BOLD_SOURCE = _FONT_SOURCE
+        _BOLD_IS_FALLBACK = True
+    print(f"Font (regular): {_FONT_SOURCE}")
+    bold_note = " [fallback regular + 1.08x]" if _BOLD_IS_FALLBACK else " [true bold]"
+    print(f"Font (bold):    {_FONT_BOLD_SOURCE}{bold_note}")
+
+
+def _measure_text_cm(text: str, *, is_header: bool = False) -> float:
+    """Return rendered width of text in cm using PIL font metrics at 12pt."""
+    _load_fonts()
+    if _FONT_REG is None:
+        return len(text) * 0.21
+    font = _FONT_BOLD if is_header else _FONT_REG
+    cm = font.getlength(text) * _PX_TO_CM
+    if is_header and _BOLD_IS_FALLBACK:
+        cm *= 1.08
+    return cm
+
+
+# Mirrors _inline_cell break points used for w:noBreak: spaces, @, period, slash, underscore
+_TOKEN_SPLIT_RE = re.compile(r"[\s@./_]+")
+
+# Floor measurement only: split "MedicationRequest" → ["Medication", "Request"] so the floor
+# reflects each camelCase segment, not the full compound word.  Rendering is unchanged.
+_CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z])(?=[A-Z])")
 
 
 def _clean(text: str) -> str:
@@ -128,7 +225,7 @@ def _plain(text: str) -> str:
                   lambda m: (m.group(1) or m.group(2)), text)
     text = re.sub(r"``(.+?)``|`(.+?)`",
                   lambda m: (m.group(1) or m.group(2)), text)
-    text = re.sub(r"\*(.+?)\*|_(.+?)_",
+    text = re.sub(r"\*([^*\n]+?)\*|(?<!\w)_([^_\n]+?)_(?!\w)",
                   lambda m: (m.group(1) or m.group(2)), text)
     return text.strip()
 
@@ -264,6 +361,85 @@ def _col0_entity_test(para, text: str, is_header: bool) -> None:
                 rPr_zw.append(OxmlElement("w:noProof"))
 
 
+def _inline_cell(para, text: str, is_header: bool = False) -> None:
+    """Render table cell text with w:noBreak per word to prevent mid-word line breaks."""
+    text = text.replace("—", "-").replace("–", "-")
+    text = _clean(text)
+
+    for part in _INLINE_RE.split(text):
+        if not part:
+            continue
+        if re.fullmatch(r"\*\*\*.+?\*\*\*|___.+?___", part):
+            seg_text, seg_bold, seg_italic = part[3:-3], True, True
+        elif re.fullmatch(r"\*\*.+?\*\*|__.+?__", part):
+            seg_text, seg_bold, seg_italic = part[2:-2], True, False
+        elif re.fullmatch(r"``.+?``", part):
+            seg_text, seg_bold, seg_italic = part[2:-2], is_header, False
+        elif re.fullmatch(r"`.+?`", part):
+            seg_text, seg_bold, seg_italic = part[1:-1], is_header, False
+        elif re.fullmatch(r"\*[^*\n]+?\*|(?<!\w)_[^_\n]+?_(?!\w)", part):
+            seg_text, seg_bold, seg_italic = part[1:-1], is_header, True
+        else:
+            seg_text, seg_bold, seg_italic = part, is_header, False
+
+        for token in re.split(r"( +)", seg_text):
+            if not token:
+                continue
+            if token.strip() and ("@" in token or "." in token or "/" in token or "_" in token):
+                for sub in re.split(r"([@./_])", token):
+                    if not sub:
+                        continue
+                    r = para.add_run(sub)
+                    r.bold = seg_bold
+                    r.italic = seg_italic
+                    r.font.name = FONT
+                    r.font.size = BODY_PT
+                    rPr = r._r.get_or_add_rPr()
+                    if rPr.find(qn("w:noProof")) is None:
+                        rPr.append(OxmlElement("w:noProof"))
+                    if sub not in ("@", ".", "/", "_"):
+                        if rPr.find(qn("w:noBreak")) is None:
+                            rPr.append(OxmlElement("w:noBreak"))
+                    elif sub == "_":
+                        zwsp = para.add_run("​")
+                        zwsp.bold = seg_bold
+                        zwsp.italic = seg_italic
+                        zwsp.font.name = FONT
+                        zwsp.font.size = BODY_PT
+                        rPr_zw = zwsp._r.get_or_add_rPr()
+                        if rPr_zw.find(qn("w:noProof")) is None:
+                            rPr_zw.append(OxmlElement("w:noProof"))
+            else:
+                r = para.add_run(token)
+                r.bold = seg_bold
+                r.italic = seg_italic
+                r.font.name = FONT
+                r.font.size = BODY_PT
+                rPr = r._r.get_or_add_rPr()
+                if rPr.find(qn("w:noProof")) is None:
+                    rPr.append(OxmlElement("w:noProof"))
+                if token.strip():
+                    if rPr.find(qn("w:noBreak")) is None:
+                        rPr.append(OxmlElement("w:noBreak"))
+
+
+# ── Known table overrides (Jane-approved widths; values unchanged from prior version)
+_KNOWN_COL_WIDTHS: dict = {
+    ("Test File", "Tests", "REQ_IDs Covered", "Layer(s)", "Gate Group", "Status"):
+        [4.0, 1.5, 3.0, 2.0, 3.5, 2.0],          # Section 1 Overview
+    ("Test Function", "TC", "Layer", "What Is Verified"):
+        [4.5, 2.0, 2.0, 7.5],                     # Entity test tables
+    ("Test Function", "Layer", "What Is Verified"):
+        [4.5, 2.0, 9.5],                           # Section 4 DB Layer
+    ("Gate Group", "Test Type", "Rationale"):
+        [5.0, 3.0, 8.0],                           # Section 6.2
+    ("Group", "Current Status", "Phase 2 Gate"):
+        [5.0, 3.0, 8.0],                           # Section 6.3
+    ("Test File", "Test Function", "TC"):
+        [3.5, 10.5, 2.0],                          # Section 6.5
+}
+
+
 def _add_table(doc, tbl_lines: list) -> None:
     rows = _parse_table_rows(tbl_lines)
     if not rows:
@@ -277,74 +453,48 @@ def _add_table(doc, tbl_lines: list) -> None:
             "– please review manually."
         )
 
-    _ENTITY_HDR = ["Test Function", "TC", "Layer", "What Is Verified"]
-    _OVERVIEW_HDR = ["Test File", "Tests", "REQ_IDs Covered", "Layer(s)", "Gate Group", "Status"]
-    _DB_HDR = ["Test Function", "Layer", "What Is Verified"]
-    _GATE_HDR = ["Gate Group", "Test Type", "Rationale"]
-    _NONBLOCK_HDR = ["Group", "Current Status", "Phase 2 Gate"]
-    _P1GATE_HDR = ["Test File", "Test Function", "TC"]
+    header_key = tuple(_plain(c) for c in rows[0]) if rows else ()
+    col_cm = list(_KNOWN_COL_WIDTHS[header_key]) if header_key in _KNOWN_COL_WIDTHS else None
 
-    if n_cols == 6 and rows and [_plain(c) for c in rows[0]] == _OVERVIEW_HDR:
-        col_cm = [4.0, 1.5, 3.0, 2.0, 3.5, 2.0]  # Section 1 Overview: col1 -2cm, col2 +0.5cm, col3 +1cm, col4 +1cm
-    elif n_cols == 4 and rows and [_plain(c) for c in rows[0]] == _ENTITY_HDR:
-        col_cm = [4.5, 2.0, 2.0, 7.5]
-    elif n_cols == 3 and rows and [_plain(c) for c in rows[0]] == _DB_HDR:
-        col_cm = [4.5, 2.0, 9.5]  # Section 4 DB Layer: col1=4.5cm, col2=2cm, col3=remainder
-    elif n_cols == 3 and rows and [_plain(c) for c in rows[0]] == _GATE_HDR:
-        col_cm = [5.0, 3.0, 8.0]  # Section 6.2: col1 -1cm, col2 +1cm
-    elif n_cols == 3 and rows and [_plain(c) for c in rows[0]] == _NONBLOCK_HDR:
-        col_cm = [5.0, 3.0, 8.0]  # Section 6.3: col1 -1cm, col2 +1cm
-    elif n_cols == 3 and rows and [_plain(c) for c in rows[0]] == _P1GATE_HDR:
-        col_cm = [3.5, 10.5, 2.0]  # Section 6.5: col1 -1cm, col3 +1cm
-    else:
-        # Column widths: per-column minimum sized to fit the longest single word,
-        # then proportional distribution of remaining space based on max cell length.
-        #
-        # min[i] = longest_word_chars[i] * 0.2 cm  (Calibri 12pt ≈ 0.2 cm/char)
-        # Iterative: pin columns whose proportional share < their min, redistribute
-        # remainder among free columns. When sum(mins) > page width, fall back to
-        # pure proportional (minimums cannot all be honoured).
-        CM_PER_CHAR = 0.2
+    if col_cm is None:
+        # Universal algorithm — Points 2–4: non-iterative, PIL-measured, guaranteed correct.
+        CELL_PAD_CM = 0.25
 
-        col_max_cell = [1] * n_cols   # max total plain-text chars per column
-        col_max_word = [1] * n_cols   # max single-word chars per column
+        col_max_cell = [1] * n_cols    # total char count per column (surplus weight)
+        col_eff_floor = [0.0] * n_cols  # max measured unbreakable-token width per column
 
-        for row in rows:
+        for r_idx, row in enumerate(rows):
+            is_hdr = (r_idx == 0)
             for i, cell in enumerate(row[:n_cols]):
                 plain = _plain(cell)
                 col_max_cell[i] = max(col_max_cell[i], len(plain))
-                words = plain.split()
-                if words:
-                    col_max_word[i] = max(col_max_word[i], max(len(w) for w in words))
+                for tok in _TOKEN_SPLIT_RE.split(plain):
+                    for sub_tok in _CAMEL_SPLIT_RE.split(tok):
+                        if sub_tok:
+                            col_eff_floor[i] = max(
+                                col_eff_floor[i],
+                                _measure_text_cm(sub_tok, is_header=is_hdr),
+                            )
 
-        col_min = [col_max_word[i] * CM_PER_CHAR for i in range(n_cols)]
+        effective_floor = [col_eff_floor[i] + CELL_PAD_CM for i in range(n_cols)]
+        floor_total = sum(effective_floor)
 
-        if sum(col_min) <= PAGE_USABLE_CM:
-            col_cm = [0.0] * n_cols
-            fixed: set = set()
-            remaining = PAGE_USABLE_CM
-            for _ in range(n_cols):
-                free = [i for i in range(n_cols) if i not in fixed]
-                if not free:
-                    break
-                total_free = sum(col_max_cell[i] for i in free) or 1
-                prop = {i: remaining * col_max_cell[i] / total_free for i in free}
-                under = [i for i in free if prop[i] < col_min[i]]
-                if not under:
-                    for i in free:
-                        col_cm[i] = prop[i]
-                    break
-                for i in under:
-                    col_cm[i] = col_min[i]
-                    remaining -= col_min[i]
-                    fixed.add(i)
+        surplus = PAGE_USABLE_CM - floor_total
+        if surplus <= 0:
+            print(
+                f"WARNING: table floor_total {floor_total:.3f} cm >= "
+                f"PAGE_USABLE_CM {PAGE_USABLE_CM:.1f} cm "
+                f"– floors cannot all be honored; proportional-floor fallback applied. "
+                f"Headers: {list(header_key)}"
+            )
+            col_cm = [effective_floor[i] * PAGE_USABLE_CM / floor_total
+                      for i in range(n_cols)]
         else:
-            total_chars = sum(col_max_cell)
-            col_cm = [PAGE_USABLE_CM * col_max_cell[i] / total_chars for i in range(n_cols)]
-
-        # Normalise to exactly PAGE_USABLE_CM (guards against float drift)
-        col_total = sum(col_cm)
-        col_cm = [c * PAGE_USABLE_CM / col_total for c in col_cm]
+            weight_total = sum(col_max_cell) or 1
+            col_cm = [
+                effective_floor[i] + surplus * col_max_cell[i] / weight_total
+                for i in range(n_cols)
+            ]
 
     is_col0_testname = col_cm in ([4.5, 2.0, 2.0, 7.5], [4.5, 2.0, 9.5], [3.5, 10.5, 2.0])
 
@@ -353,6 +503,14 @@ def _add_table(doc, tbl_lines: list) -> None:
     _no_borders(table._tbl)
     _apply_col_widths(table, col_cm)
     _cant_split_rows(table)
+    tbl_pr = table._tbl.find(qn("w:tblPr"))
+    if tbl_pr is not None:
+        if tbl_pr.find(qn("w:keepLines")) is None:
+            tbl_pr.append(OxmlElement("w:keepLines"))
+        if tbl_pr.find(qn("w:tblLook")) is None:
+            tl = OxmlElement("w:tblLook")
+            tl.set(qn("w:val"), "04A0")
+            tbl_pr.append(tl)
 
     for r_idx, row in enumerate(rows):
         is_header = r_idx == 0
@@ -365,12 +523,7 @@ def _add_table(doc, tbl_lines: list) -> None:
             if is_col0_testname and (c_idx == 0 or (col_cm == [3.5, 10.5, 2.0] and c_idx == 1)):
                 _col0_entity_test(para, text, is_header)
             else:
-                _inline(para, text)
-                if is_header:
-                    for run in para.runs:
-                        run.bold = True
-                        run.font.name = FONT
-                        run.font.size = BODY_PT
+                _inline_cell(para, text, is_header)
 
 
 # ── Page numbers ──────────────────────────────────────────────────────────────
@@ -500,6 +653,10 @@ def convert(md_path: Path, docx_path: Path) -> None:
                 while i < len(lines) and _is_table_row(lines[i]):
                     tbl_lines.append(lines[i])
                     i += 1
+                anchor = doc.add_paragraph()
+                _fmt_para(anchor, keep_with_next=True)
+                anchor.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                anchor.paragraph_format.line_spacing = Pt(1)
                 _add_table(doc, tbl_lines)
                 continue
 
